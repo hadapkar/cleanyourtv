@@ -84,14 +84,13 @@ final class CardHome {
         int left = (int) (w * 0.059f), top = (int) (h * 0.20f), bottom = (int) (h * 0.685f);
         int gap = (int) (w * 0.011f), leftW = (int) (w * 0.36f);
         int rightX = left + leftW + gap, rightW = w - left - rightX;
-        int rowGap = (int) (h * 0.02f), recentH = (int) ((bottom - top - rowGap) * 0.60f);
+        int rowGap = (int) (h * 0.02f), recentH = (int) ((bottom - top - rowGap) * 0.52f);
 
         // Left: greeting, clock, date, weather.
         LinearLayout leftCard = card(left, top, leftW, bottom - top);
-        leftCard.setPadding(px(34), px(24), px(34), px(24));
+        leftCard.setPadding(px(34), px(18), px(34), px(18));
         leftCard.setGravity(Gravity.CENTER_VERTICAL);
-        greeting = text(13, 0xB3FFFFFF, "sans-serif-medium", 0.2f);
-        greeting.setAllCaps(true);
+        greeting = text(15, 0xD9FFFFFF, "sans-serif-medium", 0.03f);
         greeting.setSingleLine(true);
         leftCard.addView(greeting);
         LinearLayout timeRow = new LinearLayout(activity);
@@ -99,7 +98,7 @@ final class CardHome {
         TextClock clock = new TextClock(activity);
         clock.setFormat12Hour("h:mm");
         clock.setFormat24Hour("HH:mm");
-        style(clock, 78, 0xFFFFFFFF, "sans-serif-light", -0.03f);
+        style(clock, 70, 0xFFFFFFFF, "sans-serif-light", -0.03f);
         clock.setIncludeFontPadding(false);
         TextClock ampm = new TextClock(activity);
         ampm.setFormat12Hour("a");
@@ -120,15 +119,22 @@ final class CardHome {
         View divider = new View(activity);
         divider.setBackgroundColor(0x33FFFFFF);
         LinearLayout.LayoutParams divLp = new LinearLayout.LayoutParams(-1, Math.max(1, px(1)));
-        divLp.topMargin = px(18);
-        divLp.bottomMargin = px(14);
+        divLp.topMargin = px(14);
+        divLp.bottomMargin = px(10);
         leftCard.addView(divider, divLp);
-        weatherTemp = text(44, 0xFFFFFFFF, "sans-serif-light", -0.02f);
+        // The temperature with the condition and place beside it, so the card never runs out of height.
+        LinearLayout weatherRow = new LinearLayout(activity);
+        weatherRow.setGravity(Gravity.CENTER_VERTICAL);
+        weatherTemp = text(40, 0xFFFFFFFF, "sans-serif-light", -0.02f);
         weatherTemp.setIncludeFontPadding(false);
         weatherText = text(16, 0xCCFFFFFF, "sans-serif", 0.02f);
         weatherText.setSingleLine(true);
-        leftCard.addView(weatherTemp);
-        leftCard.addView(weatherText);
+        weatherText.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams wtLp = new LinearLayout.LayoutParams(0, -2, 1f);
+        wtLp.leftMargin = px(14);
+        weatherRow.addView(weatherTemp);
+        weatherRow.addView(weatherText, wtLp);
+        leftCard.addView(weatherRow);
 
         // Right, top: the apps opened last.
         LinearLayout recent = card(rightX, top, rightW, recentH);
@@ -150,13 +156,13 @@ final class CardHome {
         LinearLayout jarvis = card(rightX, jarvisY, rightW, bottom - jarvisY);
         jarvis.setOrientation(LinearLayout.HORIZONTAL);
         jarvis.setGravity(Gravity.CENTER_VERTICAL);
-        jarvis.setPadding(px(34), px(14), px(34), px(14));
+        jarvis.setPadding(px(34), px(8), px(34), px(8));
         LinearLayout words = new LinearLayout(activity);
         words.setOrientation(LinearLayout.VERTICAL);
         TextView jarvisKicker = text(12, 0xB3FFFFFF, "sans-serif-medium", 0.2f);
         jarvisKicker.setAllCaps(true);
         jarvisKicker.setText("Jarvis");
-        TextView ask = text(32, 0xFFFFFFFF, "sans-serif-light", -0.01f);
+        TextView ask = text(28, 0xFFFFFFFF, "sans-serif-light", -0.01f);
         ask.setText("Just ask.");
         TextView hint = text(14, 0x99FFFFFF, "sans-serif", 0.02f);
         hint.setText("Press OK, then speak");

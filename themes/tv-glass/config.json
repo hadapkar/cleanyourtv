@@ -57,5 +57,6 @@
     "nextapp.fx",
     "org.localsend.localsend_app",
     "org.videolan.vlc"
-  ]
+  ],
+  "ambient_glow": false
 }

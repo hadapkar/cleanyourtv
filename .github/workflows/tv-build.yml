@@ -34,6 +34,27 @@ jobs:
         working-directory: launcher
         run: ./gradlew testDebugUnitTest
 
+      # One fixed key, so each new build installs as an update (a fresh debug key forces an uninstall,
+      # which wipes the launcher's data). The key lives only in this repo's Actions secrets.
+      - name: Restore signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.TV_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.TV_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::warning::No TV_KEYSTORE_BASE64 secret; building with a throwaway debug key."
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/tv.p12"
+          # Project properties for this checkout only (the file is never committed back).
+          {
+            echo ""
+            echo "android.injected.signing.store.file=$RUNNER_TEMP/tv.p12"
+            echo "android.injected.signing.store.password=$KEYSTORE_PASSWORD"
+            echo "android.injected.signing.key.alias=tvhome"
+            echo "android.injected.signing.key.password=$KEYSTORE_PASSWORD"
+          } >> launcher/gradle.properties
+
       - name: Build release APK
         working-directory: launcher
         run: ./gradlew :app:assembleRelease ${{ matrix.args }} :weather:assembleRelease
@@ -45,6 +66,7 @@ jobs:
           cp launcher/weather/build/outputs/apk/release/weather-release.apk "out/tvweather-${{ matrix.name }}.apk"
           sha256sum out/*.apk | tee out/SHA256SUMS-${{ matrix.name }}.txt
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BT/apksigner" verify --print-certs "out/tvhome-${{ matrix.name }}.apk" | grep -E "SHA-256" || true
           "$BT/aapt2" dump badging "out/tvhome-${{ matrix.name }}.apk" | grep -E "^package|minSdkVersion|native-code" || true
 
       - uses: actions/upload-artifact@v4
