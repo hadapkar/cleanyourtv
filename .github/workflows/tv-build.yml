@@ -36,12 +36,13 @@ jobs:
 
       - name: Build release APK
         working-directory: launcher
-        run: ./gradlew assembleRelease ${{ matrix.args }}
+        run: ./gradlew :app:assembleRelease ${{ matrix.args }} :weather:assembleRelease
 
       - name: Name the APK and record its hash
         run: |
           mkdir -p out
           cp launcher/app/build/outputs/apk/release/app-release.apk "out/tvhome-${{ matrix.name }}.apk"
+          cp launcher/weather/build/outputs/apk/release/weather-release.apk "out/tvweather-${{ matrix.name }}.apk"
           sha256sum out/*.apk | tee out/SHA256SUMS-${{ matrix.name }}.txt
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           "$BT/aapt2" dump badging "out/tvhome-${{ matrix.name }}.apk" | grep -E "^package|minSdkVersion|native-code" || true

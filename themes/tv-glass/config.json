@@ -39,5 +39,6 @@
   "app_library": true,
   "library_button": true,
   "fill_dock": false,
-  "show_network_pill": true
+  "show_network_pill": true,
+  "card_home": true
 }

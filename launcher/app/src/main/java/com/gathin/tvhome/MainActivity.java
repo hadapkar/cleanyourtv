@@ -139,6 +139,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private AppAdapter adapter;
     private RecyclerView grid;
     private FrameLayout root;
+    /** Card home (config.json card_home): glass cards above the dock; created on the first resume, null when off. */
+    private CardHome cardHome;
+    private boolean cardHomeChecked;
     private WallpaperPlayer wallpaperPlayer;
     private GlassView glass;
     private View ambient;
@@ -1027,6 +1030,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         restartIdleClock();
         promptsPaused = false;
         if (grid.getAdapter() == null) grid.setAdapter(adapter);   // dropped by onTrimMemory
+        if (!cardHomeChecked) {
+            cardHomeChecked = true;
+            View main = grid;
+            while (main.getParent() != root) main = (View) main.getParent();
+            cardHome = CardHome.create(this, root, main);
+            // The cards carry their own greeting, clock and date; the header keeps its space so nothing moves.
+            if (cardHome != null) clockBlock.setVisibility(View.INVISIBLE);
+        }
+        if (cardHome != null) {
+            cardHome.setGreeting(greeting.getText());
+            cardHome.refresh();
+        }
         switch (tileRefresh.onResume(packagesChangedSinceRebuild())) {
             case REBUILD:
                 tilesReady = false;

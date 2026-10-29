@@ -22,6 +22,16 @@ final class LastOpened {
         prefs(ctx).edit().putLong(pkg, System.currentTimeMillis()).apply();
     }
 
+    /** Packages Home opened, most recent first, at most {@code max}. */
+    static java.util.List<String> recent(Context ctx, int max) {
+        java.util.List<String> keys = new java.util.ArrayList<>();
+        for (java.util.Map.Entry<String, ?> e : prefs(ctx).getAll().entrySet()) {
+            if (e.getValue() instanceof Long) keys.add(e.getKey());
+        }
+        keys.sort((a, b) -> Long.compare(get(ctx, b), get(ctx, a)));
+        return keys.size() > max ? new java.util.ArrayList<>(keys.subList(0, max)) : keys;
+    }
+
     /** Milliseconds since the epoch, or 0 when Home never opened the app. */
     static long get(Context ctx, String pkg) {
         return pkg == null ? 0L : prefs(ctx).getLong(pkg, 0L);

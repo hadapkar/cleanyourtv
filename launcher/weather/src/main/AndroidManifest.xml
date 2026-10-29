@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- The weather lives in this add-on so the launcher itself never needs the network. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:label="TV Weather"
+        android:allowBackup="false"
+        android:usesCleartextTraffic="false">
+
+        <!-- Read-only: temperature, condition and city, the same for any caller. -->
+        <provider
+            android:name=".WeatherProvider"
+            android:authorities="com.gathin.tvweather"
+            android:exported="true" />
+    </application>
+</manifest>
