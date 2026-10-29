@@ -60,15 +60,19 @@ final class CardHome {
 
     /** Returns the cards when the theme turns them on, otherwise null. They sit in the root just under {@code above}. */
     static CardHome create(Activity activity, FrameLayout root, View above) {
+        return enabled(activity) ? new CardHome(activity, root, above) : null;
+    }
+
+    /** Whether the pushed theme's config.json turns card home on. */
+    static boolean enabled(Context ctx) {
         try {
-            File file = new File(Config.dir(activity), Config.FILE_NAME);
-            if (!file.isFile()) return null;
+            File file = new File(Config.dir(ctx), Config.FILE_NAME);
+            if (!file.isFile()) return false;
             String json = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
-            if (!new JSONObject(json).optBoolean("card_home", false)) return null;
+            return new JSONObject(json).optBoolean("card_home", false);
         } catch (Exception e) {
-            return null;
+            return false;
         }
-        return new CardHome(activity, root, above);
     }
 
     private CardHome(Activity activity, FrameLayout root, View above) {
