@@ -1,0 +1,32 @@
+{
+  "dock_apps": [
+    "com.netflix.ninja",
+    "in.startv.hotstar",
+    "com.google.android.youtube.tv",
+    "com.sonyliv",
+    "org.videolan.vlc"
+  ],
+  "background_color": "#090C14",
+  "wallpaper": true,
+  "wallpaper_moods": {
+    "morning": ["morning.png"],
+    "evening": ["evening.png"],
+    "night": ["night.png"]
+  },
+  "wallpaper_rotation_minutes": 30,
+  "wallpaper_dim": 8,
+  "cinematic_home": true,
+  "dock_glass": true,
+  "dock_opacity": 70,
+  "dock_title": true,
+  "icon_only_buttons": true,
+  "uniform_tiles": true,
+  "columns": 6,
+  "rows_below_dock": 1,
+  "app_glow": true,
+  "glow_style": "horizon",
+  "animations": true,
+  "advanced_effects": true,
+  "focus_overshoot": false,
+  "wifi_status_color": true
+}

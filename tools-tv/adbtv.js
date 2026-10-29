@@ -5,6 +5,8 @@
 //   node adbtv.js <host> shell "<command>" ["<command>" ...]
 //   node adbtv.js <host> push <local-file> <remote-path>
 //   node adbtv.js <host> install <local-apk>        push, `pm install -r`, then delete the temp copy
+//   node adbtv.js <host> theme <theme-folder>        push config.json and wallpapers/ to the launcher, restart Home
+//   node adbtv.js <host> screenshot <out.png>       capture the TV screen (binary-safe exec: service)
 //   node adbtv.js <host> pull-state <out-file>      save enabled and disabled package lists to a file
 //
 // The signing key lives in ~/.adbtv/adbkey.pem (never in the repo). The first connection shows
@@ -144,6 +146,15 @@ class Adb {
     return out;
   }
 
+  async exec(cmd) {
+    const chunks = [];
+    const done = new Promise((resolve) => { this._execDone = resolve; });
+    const st = await this.open('exec:' + cmd, (d) => chunks.push(d));
+    st.s.onClose = this._execDone;
+    await done;
+    return Buffer.concat(chunks);
+  }
+
   async push(local, remote, mode = 0o644) {
     const file = fs.readFileSync(local);
     let reply = Buffer.alloc(0);
@@ -185,6 +196,24 @@ async function main() {
       await adb.push(args[0], remote);
       process.stdout.write(await adb.shell(`pm install -r ${remote}`));
       await adb.shell(`rm ${remote}`);
+    } else if (verb === 'theme') {
+      const dir = '/sdcard/Android/data/com.gathin.tvhome/files';
+      const files = ['config.json'];
+      const wp = path.join(args[0], 'wallpapers');
+      if (fs.existsSync(wp)) for (const n of fs.readdirSync(wp)) files.push('wallpapers/' + n);
+      await adb.shell(`mkdir -p ${dir}/wallpapers; rm -f ${dir}/wallpapers/*`);
+      for (const rel of files) {
+        const stage = '/data/local/tmp/theme-' + rel.replace('/', '-');
+        const n = await adb.push(path.join(args[0], rel), stage);
+        process.stdout.write(await adb.shell(`cp ${stage} ${dir}/${rel}; rm ${stage}; ls -l ${dir}/${rel}`));
+        console.log(`  ${rel}: ${n} bytes`);
+      }
+      process.stdout.write(await adb.shell('am force-stop com.gathin.tvhome; am start -W -n com.gathin.tvhome/.MainActivity'));
+    } else if (verb === 'screenshot') {
+      const png = await adb.exec('screencap -p');
+      if (png.subarray(1, 4).toString() !== 'PNG') throw new Error('not a PNG: ' + png.subarray(0, 80).toString());
+      fs.writeFileSync(args[0], png);
+      console.log(`saved ${args[0]} (${png.length} bytes)`);
     } else if (verb === 'pull-state') {
       const enabled = await adb.shell('pm list packages -e');
       const disabled = await adb.shell('pm list packages -d');
