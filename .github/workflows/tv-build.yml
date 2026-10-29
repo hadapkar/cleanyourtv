@@ -1,0 +1,52 @@
+name: TV build
+
+# Builds the launcher APK for the Xiaomi TV: the standard identity, plus the com.ts.launcher
+# identity that a package-name Home allowlist on some Xiaomi firmware needs
+# (docs/devices/xiaomi-mitv-aetp0-dofus.md). Sideload only; both are signed with the debug key.
+on:
+  push:
+    branches: [tv-build]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: standard
+            args: ""
+          - name: allowlist-com.ts.launcher
+            args: "-PlauncherApplicationId=com.ts.launcher"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: wrapper
+
+      - name: Unit tests
+        working-directory: launcher
+        run: ./gradlew testDebugUnitTest
+
+      - name: Build release APK
+        working-directory: launcher
+        run: ./gradlew assembleRelease ${{ matrix.args }}
+
+      - name: Name the APK and record its hash
+        run: |
+          mkdir -p out
+          cp launcher/app/build/outputs/apk/release/app-release.apk "out/tvhome-${{ matrix.name }}.apk"
+          sha256sum out/*.apk | tee out/SHA256SUMS-${{ matrix.name }}.txt
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BT/aapt2" dump badging "out/tvhome-${{ matrix.name }}.apk" | grep -E "^package|minSdkVersion|native-code" || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tvhome-${{ matrix.name }}
+          path: out/
