@@ -4,14 +4,21 @@
     "in.startv.hotstar",
     "com.google.android.youtube.tv",
     "com.sonyliv",
-    "org.videolan.vlc"
+    "com.app.bluesun",
+    "app.cricfy.tv"
   ],
   "background_color": "#090C14",
   "wallpaper": true,
   "wallpaper_moods": {
-    "morning": ["morning.png"],
-    "evening": ["evening.png"],
-    "night": ["night.png"]
+    "morning": [
+      "morning.png"
+    ],
+    "evening": [
+      "evening.png"
+    ],
+    "night": [
+      "night.png"
+    ]
   },
   "wallpaper_rotation_minutes": 30,
   "wallpaper_dim": 8,
@@ -28,5 +35,6 @@
   "animations": true,
   "advanced_effects": true,
   "focus_overshoot": false,
-  "wifi_status_color": true
+  "wifi_status_color": true,
+  "greeting_name": "Sudarshan"
 }
