@@ -187,6 +187,13 @@ final class CardHome {
                 // No weather add-on installed.
             }
             readWeather();
+            // The add-on fetches in the background; read again once a fresh value has had time to arrive.
+            try {
+                Thread.sleep(8000);
+            } catch (InterruptedException e) {
+                return;
+            }
+            readWeather();
         }, "card-weather").start();
     }
 

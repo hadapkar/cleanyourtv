@@ -2577,7 +2577,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     private void updateClockVisibility() {
         boolean valid = System.currentTimeMillis() >= TIME_VALID_AFTER_MS;
-        clockBlock.setVisibility(valid ? View.VISIBLE : View.INVISIBLE);
+        // With card home the cards show the clock; the header block only keeps its space.
+        clockBlock.setVisibility(valid && cardHome == null ? View.VISIBLE : View.INVISIBLE);
         handler.removeCallbacks(clockCheck);
         if (valid) {
             updateGreeting();
@@ -2633,6 +2634,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         if (shamsi) shamsiDate.setText(Shamsi.today(getResources()));
         if (lunar) lunarDate.setText(Lunar.today(getResources(), lunarOffset));
+        if (cardHome != null) cardHome.setGreeting(greeting.getText());
     }
 
     // ---- race-weekend panel (a theme's race_calendar) -----------------------------------------------

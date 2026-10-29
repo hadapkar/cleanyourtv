@@ -2,6 +2,7 @@
   "dock_apps": [
     "com.netflix.ninja",
     "in.startv.hotstar",
+    "com.amazon.amazonvideo.livingroom",
     "com.google.android.youtube.tv",
     "com.sonyliv",
     "com.app.bluesun",
@@ -27,8 +28,8 @@
   "dock_opacity": 55,
   "dock_title": false,
   "icon_only_buttons": true,
-  "uniform_tiles": true,
-  "columns": 6,
+  "uniform_tiles": false,
+  "columns": 7,
   "rows_below_dock": 0,
   "app_glow": false,
   "animations": true,
@@ -40,5 +41,21 @@
   "library_button": true,
   "fill_dock": false,
   "show_network_pill": true,
-  "card_home": true
+  "card_home": true,
+  "show_library_pill": false,
+  "hidden_apps": [
+    "cm.aptoidetv.pt",
+    "com.android.vending",
+    "com.bloomberg.btva",
+    "com.google.android.play.games",
+    "com.google.android.youtube.tvmusic",
+    "com.klevico.monet",
+    "com.mitv.dream",
+    "com.mitv.tvhome.atv",
+    "com.mitv.tvhome.mitvplus",
+    "com.wolf.google.lm",
+    "nextapp.fx",
+    "org.localsend.localsend_app",
+    "org.videolan.vlc"
+  ]
 }
