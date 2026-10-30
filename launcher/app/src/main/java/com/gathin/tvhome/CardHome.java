@@ -422,9 +422,15 @@ final class CardHome {
     void onGridScrolled(int offset) {
         // The grid jumps a whole row at once (scrollToPosition), so the cards animate to where the scroll puts them
         // instead of following it frame by frame: they glide up and fade out together, and come back the same way.
-        boolean away = offset > 0;
+        // A few pixels of offset come from item decorations and layout settling, not from the owner moving down:
+        // only a real move into the rows below (past 40 dp) slides the cards away.
+        boolean away = offset > px(40);
         float y = away ? -Math.min(offset, px(120)) : 0f;
-        if (shelfAway == away && container.getTranslationY() == y) return;
+        // Compare with what is on screen, not only the last request, so cards hidden by an interrupted fade (or by
+        // settleIn racing a scroll) always come back.
+        boolean settled = container.getTranslationY() == y && container.getAlpha() == (away ? 0f : 1f)
+                && container.getVisibility() == (away ? View.INVISIBLE : View.VISIBLE);
+        if (shelfAway == away && settled) return;
         shelfAway = away;
         container.animate().cancel();
         if (!away) container.setVisibility(View.VISIBLE);

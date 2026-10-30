@@ -69,9 +69,5 @@
   "boot_intro_subtitle": "powered by Sudarshan",
   "band_every_row": true,
   "app_switcher": true,
-  "focus_sounds": true,
-  "app_keys": [
-    "scan:398:com.amazon.amazonvideo.livingroom",
-    "hold:scan:398:com.gathin.tvjarvis/.JarvisActivity"
-  ]
+  "focus_sounds": true
 }
