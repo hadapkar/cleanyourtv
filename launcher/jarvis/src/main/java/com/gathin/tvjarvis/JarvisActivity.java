@@ -114,9 +114,9 @@ public class JarvisActivity extends Activity {
         keys.setText("OK  Ask again      Back  Close");
         col.addView(keys, centred(18));
         setContentView(root);
-        android.media.session.MediaController m = Actions.playing(this);
-        if (m != null && m.getPlaybackState() != null
-                && m.getPlaybackState().getState() == android.media.session.PlaybackState.STATE_PLAYING) wasPlaying = m;
+        android.media.session.MediaController under = Actions.playing(this);
+        if (under != null && under.getPlaybackState() != null
+                && under.getPlaybackState().getState() == android.media.session.PlaybackState.STATE_PLAYING) wasPlaying = under;
         tts = new TextToSpeech(this, st -> ttsReady = st == TextToSpeech.SUCCESS);
 
         if (Gemini.key(this).isEmpty()) {
