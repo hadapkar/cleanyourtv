@@ -146,10 +146,6 @@ public class HomeKeyService extends AccessibilityService {
     public void onDestroy() {
         if (running == this) running = null;
         if (tuner != null) tuner.release();
-        if (cecGrace != null) {
-            unregisterReceiver(cecGrace);
-            cecGrace = null;
-        }
         RemoteKeys.release(this);
         stopWaitingForUnlock();
         if (screenOnReceiver != null) unregisterReceiver(screenOnReceiver);
@@ -163,33 +159,6 @@ public class HomeKeyService extends AccessibilityService {
         if (gamepads != null) gamepads.stop();
         if (consumeVolumeKeys) VolumeKeys.stop();
         super.onDestroy();
-    }
-
-    /** How long the stick stays awake after the screen goes off, for HDMI-CEC to finish. */
-    static final long CEC_GRACE_MS = 8000;
-    private BroadcastReceiver cecGrace;
-
-    /**
-     * With HDMI-CEC on, the Mi TV Stick sends the TV <Inactive Source> then <Standby> as it goes to sleep, but it often
-     * suspends between the two: on the TV, every other press of the remote's power button left the Bravia on with "no
-     * signal", and the <Standby> went out only at the next wake. A short wake lock lets it finish; then the stick
-     * sleeps as usual.
-     */
-    private void armCecGrace() {
-        if (cecGrace != null) return;
-        cecGrace = new BroadcastReceiver() {
-            @Override
-            public void onReceive(Context context, Intent intent) {
-                if (!Intent.ACTION_SCREEN_OFF.equals(intent.getAction())) return;
-                if (Settings.Global.getInt(getContentResolver(), "hdmi_control_enabled", 0) != 1) return;
-                PowerManager power = getSystemService(PowerManager.class);
-                if (power == null) return;
-                PowerManager.WakeLock hold = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "tvhome:cec-standby");
-                hold.setReferenceCounted(false);
-                hold.acquire(CEC_GRACE_MS);
-            }
-        };
-        registerReceiver(cecGrace, new IntentFilter(Intent.ACTION_SCREEN_OFF));
     }
 
     /** Some TCL boards never wake from the remote while this helper stays bound with the screen off. */
@@ -271,7 +240,6 @@ public class HomeKeyService extends AccessibilityService {
         }
         if (!stockHome.isEmpty() || !powerOnLiveTv.isEmpty()) probeAtBoot();
         armStandbyExit();
-        armCecGrace();
         holdAppKeys = RemoteKeys.parseHoldAppKeys(config.appKeys);
         holdAppScancodes = RemoteKeys.parseHoldAppScancodes(config.appKeys);
         // gamepad_passthrough, off by default. Only with key_filter on: off, the service never filters keys.

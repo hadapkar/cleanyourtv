@@ -26,8 +26,6 @@
          apps that declare a module card (docs/specs/card.md). -->
     <!-- The start-up title over whatever app the TV wakes into (granted from the shell: appops SYSTEM_ALERT_WINDOW). -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <!-- HDMI-CEC: a few seconds awake after the screen goes off, so the stick's <Standby> reaches the TV (HomeKeyService). -->
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- The app switcher's Down = close app: ends that app's background process. -->
     <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
     <!-- Continue card: which apps were used lately, however they were opened (appops GET_USAGE_STATS, from the shell). -->
