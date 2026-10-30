@@ -104,6 +104,45 @@ final class CardHome {
         }
     }
 
+    /** Screen x of the centre of the last card or poster that took focus, for the direction of the next tilt. */
+    private float lastFocusX = Float.NaN;
+    private final java.util.Map<View, ValueAnimator> drift = new java.util.WeakHashMap<>();
+
+    /**
+     * Apple TV's parallax on a poster: it tilts in from the side focus came from and springs level, then drifts
+     * slowly in 3D while it keeps focus. Rotations only (no layer per frame), so it stays smooth on 1 GB.
+     */
+    private void parallax(View v, boolean focused) {
+        ValueAnimator old = drift.remove(v);
+        if (old != null) old.cancel();
+        v.setCameraDistance(9000 * d);
+        if (!focused) {
+            v.animate().rotationX(0f).rotationY(0f).setDuration(200).start();
+            return;
+        }
+        int[] at = new int[2];
+        v.getLocationOnScreen(at);
+        float cx = at[0] + v.getWidth() / 2f;
+        float dir = Float.isNaN(lastFocusX) ? 0f : Math.signum(cx - lastFocusX);
+        lastFocusX = cx;
+        v.setRotationY(-dir * 12f);
+        v.animate().rotationY(0f).setDuration(420).setInterpolator(new android.view.animation.OvershootInterpolator(1.2f))
+                .withEndAction(() -> {
+                    if (!v.hasFocus() && !v.isFocused()) return;
+                    ValueAnimator a = ValueAnimator.ofFloat(0f, (float) (2 * Math.PI));
+                    a.setDuration(3600);
+                    a.setRepeatCount(ValueAnimator.INFINITE);
+                    a.setInterpolator(new android.view.animation.LinearInterpolator());
+                    a.addUpdateListener(an -> {
+                        float t = (float) an.getAnimatedValue();
+                        v.setRotationY(2.5f * (float) Math.sin(t));
+                        v.setRotationX(1.5f * (float) Math.cos(t));
+                    });
+                    drift.put(v, a);
+                    a.start();
+                }).start();
+    }
+
     private android.os.Bundle zoom() {
         return tvos ? Zoom.from(pressed) : null;
     }
@@ -379,7 +418,7 @@ final class CardHome {
             launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
             activity.startActivity(launch, zoom());
             opening(pkg);
-        });
+        }, true);
         return item;
     }
 
@@ -450,7 +489,7 @@ final class CardHome {
             v.setContentDescription(p[0]);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(posterW, posterH);
             if (shown > 0) lp.leftMargin = px(10);
-            makeFocusable(v, () -> launch(p[1]));
+            makeFocusable(v, () -> launch(p[1]), true);
             forYouRow.addView(v, lp);
             shown++;
         }
@@ -476,7 +515,7 @@ final class CardHome {
     }
 
     /** Packages that are part of this TV setup rather than something the owner watches. */
-    private static final java.util.Set<String> NOT_RECENT = new java.util.HashSet<>(java.util.Arrays.asList(
+    static final java.util.Set<String> NOT_RECENT = new java.util.HashSet<>(java.util.Arrays.asList(
             "com.gathin.tvhome", "com.gathin.tvdiscover", "com.gathin.tvjarvis", "com.gathin.tvweather",
             "com.android.tv.settings", "com.google.android.tvlauncher", "com.klevico.monet", "com.mitv.tvhome.atv",
             "com.google.android.katniss", "com.wolf.google.lm", "com.android.vending", "android"));
@@ -567,7 +606,7 @@ final class CardHome {
                 LinearLayout.LayoutParams nameLp = new LinearLayout.LayoutParams(-1, -2);
                 nameLp.topMargin = px(4);
                 v.addView(name, nameLp);
-                makeFocusable(v, () -> openIntent(r.intent, r.pkg));
+                makeFocusable(v, () -> openIntent(r.intent, r.pkg), true);
                 item = v;
             } else {
                 item = recentItem(r.pkg, r.title, r.art, r.launch);
@@ -802,12 +841,18 @@ final class CardHome {
      * as Apple TV does; otherwise it grows a little and shows a bright rim.
      */
     private void makeFocusable(View v, Runnable onOk) {
+        makeFocusable(v, onOk, false);
+    }
+
+    /** parallax: posters and Continue items tilt in from the direction focus came from, then drift gently. */
+    private void makeFocusable(View v, Runnable onOk, boolean parallax) {
         v.setFocusable(true);
         v.setClickable(true);
         v.setOnClickListener(x -> {
             // An app opened from Home is still starting: a second press would open another one.
             if (activity instanceof MainActivity && ((MainActivity) activity).launching()) return;
             pressed = x;
+            Sounds.select();
             onOk.run();
             pressed = null;
         });
@@ -817,6 +862,8 @@ final class CardHome {
             v.setClipToOutline(true);
             v.setOnFocusChangeListener((view, focused) -> {
                 sheen.setFocused(focused, true);
+                if (focused) Sounds.tick();
+                if (parallax) parallax(view, focused);
                 view.animate().scaleX(focused ? 1.06f : 1f).scaleY(focused ? 1.06f : 1f)
                         .translationZ(focused ? px(18) : 0f).setDuration(focused ? 320 : 200)
                         .setInterpolator(focused ? new android.view.animation.OvershootInterpolator(0.9f)

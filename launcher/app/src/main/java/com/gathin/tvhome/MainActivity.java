@@ -159,6 +159,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** Home went to the background (an app opened); the next resume plays settleIn. */
     private boolean leftHome;
     private View mainContent;
+    /** app_switcher (theme): double-press Home opens the recent-apps carousel. */
+    private boolean switcherOn;
+    private AppSwitcher switcher;
+    private long lastHomeIntent;
     private final BroadcastReceiver screenReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -502,6 +506,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         coocaaSources = cfg.coocaaSources;
 
         root = findViewById(R.id.root);
+        Sounds.init(this);
+        switcherOn = CardHome.flag(this, "app_switcher");
         if (BootIntro.enabled(this)) {
             IntentFilter screen = new IntentFilter(Intent.ACTION_SCREEN_ON);
             screen.addAction(Intent.ACTION_SCREEN_OFF);
@@ -1041,6 +1047,21 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (openInputsIfAsked(intent)) return;
         if (openLibraryIfAsked(intent)) return;
         if (intent == null || !intent.hasCategory(Intent.CATEGORY_HOME)) return;
+        if (switcherOn) {
+            // Two Home presses within half a second: the app switcher. Home while it is open closes it.
+            long now = android.os.SystemClock.uptimeMillis();
+            boolean twice = now - lastHomeIntent < 500;
+            lastHomeIntent = now;
+            if (switcher != null && switcher.isOpen()) {
+                switcher.close();
+                return;
+            }
+            if (twice) {
+                if (switcher == null) switcher = new AppSwitcher(this, root);
+                grid.post(switcher::open);
+                return;
+            }
+        }
         if (gameDay != null && !stopped) gameDay.read();
         grid.scrollToPosition(0);
         lastFocused = 0;
@@ -1315,6 +1336,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onPause() {
         hideOpening();
+        if (switcher != null) switcher.close();
         leftHome = true;
         super.onPause();
         resumed = false;

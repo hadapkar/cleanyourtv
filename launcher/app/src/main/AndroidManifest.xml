@@ -26,6 +26,8 @@
          apps that declare a module card (docs/specs/card.md). -->
     <!-- The start-up title over whatever app the TV wakes into (granted from the shell: appops SYSTEM_ALERT_WINDOW). -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- The app switcher's Down = close app: ends that app's background process. -->
+    <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
     <!-- Continue card: which apps were used lately, however they were opened (appops GET_USAGE_STATS, from the shell). -->
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
 
