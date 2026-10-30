@@ -155,4 +155,6 @@
     <string name="last_opened">Last opened %1$s</string>
     <!-- game_day: a game on now, in the race panel. -->
     <string name="game_live">Live now</string>
+    <!-- The pill on Home while an app starts. %1$s is the app's name. -->
+    <string name="opening_app">Opening %1$s\u2026</string>
 </resources>

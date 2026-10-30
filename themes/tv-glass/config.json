@@ -66,5 +66,7 @@
     "84:com.gathin.tvjarvis/.JarvisActivity",
     "231:com.gathin.tvjarvis/.JarvisActivity",
     "219:com.gathin.tvjarvis/.JarvisActivity"
-  ]
+  ],
+  "tile_menu": true,
+  "library_ok_opens": true
 }

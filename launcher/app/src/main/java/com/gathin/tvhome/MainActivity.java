@@ -142,6 +142,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** Card home (config.json card_home): glass cards above the dock; created on the first resume, null when off. */
     private CardHome cardHome;
     private boolean cardHomeChecked;
+    /** "Opening Cricfy…": shown from the press until the app's window covers Home (onPause) or 10 s pass. */
+    private TextView openingPill;
+    private final Runnable hideOpeningTask = this::hideOpening;
     private WallpaperPlayer wallpaperPlayer;
     private GlassView glass;
     private View ambient;
@@ -1030,6 +1033,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         restartIdleClock();
         promptsPaused = false;
         if (grid.getAdapter() == null) grid.setAdapter(adapter);   // dropped by onTrimMemory
+        adapter.clearLaunching();
+        hideOpening();
         if (!cardHomeChecked) {
             cardHomeChecked = true;
             View main = grid;
@@ -1238,6 +1243,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     @Override
     protected void onPause() {
+        hideOpening();
         super.onPause();
         resumed = false;
         root.removeCallbacks(showIdleClock);
@@ -2331,6 +2337,39 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         double gb = bytes / (1024.0 * 1024 * 1024);
         return gb >= 10 ? res.getString(R.string.storage_gb_whole, gb)
                 : res.getString(R.string.storage_gb_decimal, gb);
+    }
+
+    /** A small glass pill near the bottom while an app starts, so a slow one does not look like a missed press. */
+    void showOpening(CharSequence label) {
+        if (openingPill == null) {
+            openingPill = new TextView(this);
+            openingPill.setTextColor(0xF2FFFFFF);
+            openingPill.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17);
+            int padH = Math.round(22 * density), padV = Math.round(10 * density);
+            openingPill.setPadding(padH, padV, padH, padV);
+            android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+            bg.setCornerRadius(24 * density);
+            bg.setColor(0x66101828);
+            bg.setStroke(Math.max(1, Math.round(density)), 0x80FFFFFF);
+            openingPill.setBackground(bg);
+            openingPill.setFocusable(false);
+            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-2, -2,
+                    android.view.Gravity.CENTER_HORIZONTAL | android.view.Gravity.BOTTOM);
+            lp.bottomMargin = Math.round(24 * density);
+            root.addView(openingPill, lp);
+        }
+        openingPill.setText(getString(R.string.opening_app, label));
+        openingPill.animate().cancel();
+        openingPill.setAlpha(0f);
+        openingPill.setVisibility(View.VISIBLE);
+        openingPill.animate().alpha(1f).setDuration(180).start();
+        handler.removeCallbacks(hideOpeningTask);
+        handler.postDelayed(hideOpeningTask, 10_000L);
+    }
+
+    private void hideOpening() {
+        handler.removeCallbacks(hideOpeningTask);
+        if (openingPill != null) openingPill.setVisibility(View.GONE);
     }
 
     // ---- navigation ------------------------------------------------------------------------------

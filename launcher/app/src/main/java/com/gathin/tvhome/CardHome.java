@@ -220,7 +220,7 @@ final class CardHome {
         TextView ask = text(28, 0xFFFFFFFF, "sans-serif-light", -0.01f);
         ask.setText("Just ask.");
         TextView hint = text(14, 0x99FFFFFF, "sans-serif", 0.02f);
-        hint.setText("Press OK, then speak");
+        hint.setText("OK to speak");
         words.addView(jarvisKicker);
         words.addView(ask);
         words.addView(hint);
@@ -344,6 +344,7 @@ final class CardHome {
             LastOpened.record(activity, pkg);
             launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             activity.startActivity(launch);
+            opening(pkg);
         });
         return item;
     }
@@ -422,7 +423,7 @@ final class CardHome {
             swipeStack[i].setImageBitmap(i < stackArt.length ? stackArt[i] : null);
             swipeStack[i].setVisibility(i < stackArt.length && stackArt[i] != null ? View.VISIBLE : View.INVISIBLE);
         }
-        swipeCount.setText(!installed ? "Not installed" : queued > 0 ? queued + " to rate \u00b7 OK to start" : "OK to start");
+        swipeCount.setText(!installed ? "Not installed" : queued > 0 ? queued + " to rate" : "OK to start");
     }
 
     /** Continue watching takes the bottom-left card when there is any; otherwise it keeps Recently opened. */
@@ -479,9 +480,22 @@ final class CardHome {
             }
             LastOpened.record(activity, pkg);
             activity.startActivity(i);
+            opening(pkg);
         } catch (Exception e) {
             launch(pkg);
         }
+    }
+
+    private void opening(String pkg) {
+        if (!(activity instanceof MainActivity)) return;
+        CharSequence label = pkg;
+        try {
+            PackageManager pm = activity.getPackageManager();
+            label = pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0));
+        } catch (PackageManager.NameNotFoundException ignored) {
+            // Keep the package name.
+        }
+        ((MainActivity) activity).showOpening(label);
     }
 
     /** Draws the screen behind the cards (cards hidden) at 1/FROST size and blurs it, for the Frost backgrounds. */
@@ -613,6 +627,7 @@ final class CardHome {
         if (i == null) return;
         LastOpened.record(activity, pkg);
         activity.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        opening(pkg);
     }
 
     private void openSwipe() {
