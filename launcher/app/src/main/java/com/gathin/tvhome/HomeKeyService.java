@@ -80,6 +80,8 @@ public class HomeKeyService extends AccessibilityService {
     private Map<Integer, String> frontAppKeys = Collections.emptyMap();
     private Map<Integer, String> frontAppScancodes = Collections.emptyMap();
     private String frontPackage = "";
+    /** Per-app frame rate and volume (FrontAppTuner), or null when the theme asks for neither. */
+    private FrontAppTuner tuner;
     /** power_on_home_always: Home at every power-on, not only over Live TV. */
     private boolean powerOnAlways;
     /** power_on_home: re-arms after the screen turns on; null unless the key is on. */
@@ -143,6 +145,7 @@ public class HomeKeyService extends AccessibilityService {
     @Override
     public void onDestroy() {
         if (running == this) running = null;
+        if (tuner != null) tuner.release();
         RemoteKeys.release(this);
         stopWaitingForUnlock();
         if (screenOnReceiver != null) unregisterReceiver(screenOnReceiver);
@@ -203,7 +206,10 @@ public class HomeKeyService extends AccessibilityService {
         homeLongPressHome = config.homeLongPressHome;
         frontAppKeys = RemoteKeys.parseFrontAppKeys(config.appKeys);
         frontAppScancodes = RemoteKeys.parseFrontAppScancodes(config.appKeys);
-        boolean watchFront = !frontAppKeys.isEmpty() || !frontAppScancodes.isEmpty();
+        // frame_rate_apps / app_volume: per-app output follows the app in front.
+        if (tuner != null) tuner.release();
+        tuner = FrontAppTuner.create(this);
+        boolean watchFront = !frontAppKeys.isEmpty() || !frontAppScancodes.isEmpty() || tuner != null;
         stockHome.clear();
         stockHomePackage = config.stockHomeRedirect;
         if (!config.stockHomeRedirect.isEmpty()) {
@@ -309,12 +315,13 @@ public class HomeKeyService extends AccessibilityService {
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return;
         // app_keys "front:" entries: only activities count, so a toast or the volume bar doesn't change the app in front.
-        if ((!frontAppKeys.isEmpty() || !frontAppScancodes.isEmpty())
+        if ((!frontAppKeys.isEmpty() || !frontAppScancodes.isEmpty() || tuner != null)
                 && event.getPackageName() != null && event.getClassName() != null) {
             try {
                 ComponentName window = new ComponentName(event.getPackageName().toString(), event.getClassName().toString());
                 getPackageManager().getActivityInfo(window, 0);
                 frontPackage = window.getPackageName();
+                if (tuner != null) tuner.onFront(frontPackage);
             } catch (PackageManager.NameNotFoundException notAnActivity) {
                 // a dialog, panel or overlay: the app under it is still in front
             }
