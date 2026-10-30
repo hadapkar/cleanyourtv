@@ -21,6 +21,7 @@ import java.util.List;
  *   <li>{@code content://com.gathin.tvdiscover/queue}: titles not rated yet (for the Swipe card's count);</li>
  *   <li>{@code content://com.gathin.tvdiscover/continue}: Android TV's Continue watching rows (see WatchNext);</li>
  *   <li>{@code content://com.gathin.tvdiscover/shelf/<package>}: that app's own rows, for Home's top shelf (Shelf);</li>
+ *   <li>{@code content://com.gathin.tvdiscover/cricket}: live and recent cricket scores (Cricket);</li>
  *   <li>{@code content://com.gathin.tvdiscover/poster/<key>}: the title's poster as an image file.</li>
  * </ul>
  * A read starts a background refresh when the list is older than {@link Catalog#REFRESH_MS}.
@@ -29,6 +30,8 @@ public class DiscoverProvider extends ContentProvider {
     private static final String[] COLUMNS = {"key", "title", "year", "genres", "service", "pkg", "poster"};
     private static final String[] CONTINUE = {"key", "title", "subtitle", "pkg", "intent", "progress", "poster", "engaged"};
     private static final String[] SHELF = {"key", "title", "subtitle", "pkg", "intent", "progress", "poster", "wide"};
+    /** priority: 2 India playing, 1 another international, 0 the rest; batting: 1 or 2 for the side in, else 0. */
+    private static final String[] CRICKET = {"team1", "score1", "team2", "score2", "batting", "priority"};
     private volatile boolean refreshing;
 
     @Override
@@ -47,6 +50,14 @@ public class DiscoverProvider extends ContentProvider {
                 c.addRow(new Object[]{key, t.optString("title"), t.optString("subtitle"), t.optString("pkg"),
                         t.optString("intent"), t.optInt("progress"), "content://com.gathin.tvdiscover/poster/" + key,
                         t.optBoolean("wide", true) ? 1 : 0});
+            }
+            return c;
+        }
+        if ("cricket".equals(what)) {
+            MatrixCursor c = new MatrixCursor(CRICKET);
+            for (JSONObject m : Cricket.matches()) {
+                c.addRow(new Object[]{m.optString("team1"), m.optString("score1"), m.optString("team2"),
+                        m.optString("score2"), m.optInt("batting"), m.optInt("priority")});
             }
             return c;
         }

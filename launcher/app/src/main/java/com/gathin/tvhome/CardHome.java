@@ -66,6 +66,7 @@ final class CardHome {
     private final TextView greeting;
     private final TextView weatherTemp;
     private final TextView weatherText;
+    private final TextView cricketLine;
     private final LinearLayout recentRow;
     private final TextView recentHint;
     private final OrbView orb;
@@ -252,6 +253,14 @@ final class CardHome {
         weatherRow.addView(weatherTemp);
         weatherRow.addView(weatherText, wtLp);
         leftCard.addView(weatherRow);
+        // India's match, when there is one: the score under the weather, kept current while Home is on screen.
+        cricketLine = text(15, 0xE6FFFFFF, "sans-serif-medium", 0.01f);
+        cricketLine.setSingleLine(true);
+        cricketLine.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams crLp = new LinearLayout.LayoutParams(-1, -2);
+        crLp.topMargin = px(12);
+        cricketLine.setVisibility(View.GONE);
+        leftCard.addView(cricketLine, crLp);
 
         // Right: two rows, For you and Swipe over Recently opened and Jarvis.
         int topRowH = (int) ((bottom - top - rowGap) * 0.56f);
@@ -608,6 +617,12 @@ final class CardHome {
         final java.util.List<String[]> rows = new java.util.ArrayList<>();   // {title, intent}
         final java.util.List<android.graphics.Bitmap> art = new java.util.ArrayList<>();
         boolean wide = true;
+        /** Cricfy: score tiles from the cricket feed instead of artwork (it publishes no rows of its own). */
+        final java.util.List<String[]> matches = new java.util.ArrayList<>();
+
+        boolean isEmpty() {
+            return rows.isEmpty() && matches.isEmpty();
+        }
     }
 
     private void onFocusMoved(View old, View now) {
@@ -659,7 +674,8 @@ final class CardHome {
         String pkg = shelfWant;
         if (pkg == null) return;
         ShelfData cached = shelfCache.get(pkg);
-        if (cached != null && System.currentTimeMillis() - cached.at < SHELF_FRESH_MS) {
+        long fresh = CRICFY.equals(pkg) ? CRICKET_EVERY_MS : SHELF_FRESH_MS;
+        if (cached != null && System.currentTimeMillis() - cached.at < fresh) {
             applyShelf(pkg, cached);
             return;
         }
@@ -682,6 +698,11 @@ final class CardHome {
     private ShelfData readShelf(String pkg) {
         ShelfData s = new ShelfData();
         if (!installed(DISCOVER_PKG)) return s;
+        if (CRICFY.equals(pkg)) {
+            java.util.List<String[]> m = readCricket();
+            s.matches.addAll(m.size() > 6 ? m.subList(0, 6) : m);
+            return s;
+        }
         java.util.List<String[]> rows = new java.util.ArrayList<>();   // {title, intent, poster}
         try (Cursor c = activity.getContentResolver().query(Uri.withAppendedPath(SHELF, pkg), null, null, null, null)) {
             while (c != null && c.moveToNext()) {
@@ -705,14 +726,15 @@ final class CardHome {
 
     private void applyShelf(String pkg, ShelfData data) {
         shelfWant = null;
-        if (data.rows.isEmpty()) {
+        if (data.isEmpty()) {
             hideShelf();
             return;
         }
         if (shelfTile == null || !shelfTile.isFocused()) return;
         shelfPkg = pkg;
-        shelfTitle.setText(shelfLabel);
-        fillShelf(pkg, data);
+        shelfTitle.setText(data.matches.isEmpty() ? shelfLabel : shelfLabel + "  ·  Live & recent scores");
+        if (data.matches.isEmpty()) fillShelf(pkg, data);
+        else fillScores(pkg, data.matches);
         shelfCard.setDescendantFocusability(android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS);
         if (!shelfShown) {
             shelfShown = true;
@@ -787,6 +809,82 @@ final class CardHome {
             if (i % cols > 0) lp.leftMargin = gapX;
             line.addView(item, lp);
         }
+    }
+
+    /**
+     * Cricfy's shelf: up to six matches as glass score tiles, two lines of three, India first. The side batting is
+     * bright with a star; a match in progress carries a red LIVE tag. OK opens Cricfy.
+     */
+    private void fillScores(String pkg, java.util.List<String[]> matches) {
+        shelfGrid.removeAllViews();
+        int innerW = gRightW - px(48), innerH = gBottom - gTop - px(16 + 14) - px(24);
+        int gapX = px(14), gapY = px(12), cols = 3;
+        int w = (innerW - (cols - 1) * gapX) / cols;
+        int h = Math.min(px(150), (innerH - gapY) / 2);
+        LinearLayout line = null;
+        for (int i = 0; i < matches.size(); i++) {
+            if (i % cols == 0) {
+                line = new LinearLayout(activity);
+                line.setClipChildren(false);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+                if (i > 0) lp.topMargin = gapY;
+                shelfGrid.addView(line, lp);
+            }
+            String[] m = matches.get(i);
+            LinearLayout tile = new LinearLayout(activity);
+            tile.setOrientation(LinearLayout.VERTICAL);
+            tile.setGravity(Gravity.CENTER_VERTICAL);
+            tile.setPadding(px(16), px(10), px(16), px(10));
+            GradientDrawable bg = new GradientDrawable();
+            bg.setCornerRadius(px(10));
+            bg.setColor(0x26FFFFFF);
+            bg.setStroke(Math.max(1, px(1)), 0x33FFFFFF);
+            tile.setBackground(bg);
+            tile.setOutlineProvider(new ViewOutlineProvider() {
+                @Override
+                public void getOutline(View v, Outline outline) {
+                    outline.setRoundRect(0, 0, v.getWidth(), v.getHeight(), px(10));
+                }
+            });
+            boolean live = !"0".equals(m[4]);
+            TextView tag = text(11, live ? 0xFFFF5A5F : 0x99FFFFFF, "sans-serif-medium", 0.15f);
+            tag.setAllCaps(true);
+            tag.setText(live ? "● Live" : "2".equals(m[5]) ? "India" : "Recent");
+            tile.addView(tag);
+            tile.addView(scoreRow(m[0], m[1], "1".equals(m[4])), rowLp(px(6)));
+            tile.addView(scoreRow(m[2], m[3], "2".equals(m[4])), rowLp(px(4)));
+            tile.setContentDescription(m[0] + " " + m[1] + " versus " + m[2] + " " + m[3]);
+            makeFocusable(tile, () -> launch(pkg), false);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(w, h);
+            if (i % cols > 0) lp.leftMargin = gapX;
+            line.addView(tile, lp);
+        }
+    }
+
+    private static LinearLayout.LayoutParams rowLp(int top) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.topMargin = top;
+        return lp;
+    }
+
+    /** One side of a score tile: the team, and its score at the right; the side batting bright, with a star. */
+    private LinearLayout scoreRow(String team, String score, boolean batting) {
+        LinearLayout row = new LinearLayout(activity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        int color = batting ? 0xFFFFFFFF : 0xB3FFFFFF;
+        String family = batting ? "sans-serif-medium" : "sans-serif";
+        TextView name = text(16, color, family, 0.01f);
+        name.setSingleLine(true);
+        name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        name.setText(team);
+        TextView runs = text(16, color, family, 0f);
+        runs.setSingleLine(true);
+        runs.setText(score + (batting ? "*" : ""));
+        LinearLayout.LayoutParams runsLp = new LinearLayout.LayoutParams(-2, -2);
+        runsLp.leftMargin = px(8);
+        row.addView(name, new LinearLayout.LayoutParams(0, -2, 1f));
+        row.addView(runs, runsLp);
+        return row;
     }
 
     /** Up from the dock tile goes into the shelf, to the item above it (Android's own search could pick the clock). */
@@ -867,13 +965,76 @@ final class CardHome {
     /** The cards are slid away for the app rows (onGridScrolled). */
     private boolean shelfAway;
 
-    /** The greeting line the launcher already works out (time of day, name, festival). */
+    /** The greeting line the launcher already works out (time of day, name, festival). Called every minute. */
     void setGreeting(CharSequence text) {
         greeting.setText(text);
+        // The feed itself changes every two minutes: read it as often while Home is on screen.
+        if (System.currentTimeMillis() - lastCricket >= CRICKET_EVERY_MS) refreshCricket();
+    }
+
+    // ---- cricket ------------------------------------------------------------------------------------
+
+    private static final Uri CRICKET = Uri.parse("content://com.gathin.tvdiscover/cricket");
+    private static final String CRICFY = "app.cricfy.tv";
+    private static final long CRICKET_EVERY_MS = 2 * 60 * 1000L;
+    private long lastCricket;
+
+    /** {team1, score1, team2, score2, batting, priority}, India first, from TV Discover. Off the main thread. */
+    private java.util.List<String[]> readCricket() {
+        java.util.List<String[]> out = new java.util.ArrayList<>();
+        if (!installed(DISCOVER_PKG)) return out;
+        try (Cursor c = activity.getContentResolver().query(CRICKET, null, null, null, null)) {
+            while (c != null && c.moveToNext()) {
+                out.add(new String[]{c.getString(0), c.getString(1), c.getString(2), c.getString(3),
+                        String.valueOf(c.getInt(4)), String.valueOf(c.getInt(5))});
+            }
+        } catch (RuntimeException ignored) {
+            // An older TV Discover, or no network: no scores.
+        }
+        return out;
+    }
+
+    private void refreshCricket() {
+        lastCricket = System.currentTimeMillis();
+        new Thread(() -> {
+            java.util.List<String[]> matches = readCricket();
+            String[] india = null;
+            for (String[] m : matches) {
+                if ("2".equals(m[5])) {
+                    india = m;
+                    break;
+                }
+            }
+            CharSequence line = india == null ? null : scoreLine(india);
+            activity.runOnUiThread(() -> {
+                cricketLine.setText(line);
+                cricketLine.setVisibility(line == null ? View.GONE : View.VISIBLE);
+                // Cricfy's shelf shows the new scores too: at once when it is open over its dock tile.
+                shelfCache.remove(CRICFY);
+                if (shelfShown && CRICFY.equals(shelfPkg) && shelfTile != null && shelfTile.isFocused()) {
+                    shelfWant = CRICFY;
+                    loadShelf();
+                }
+            });
+        }, "card-cricket").start();
+    }
+
+    /** "● LIVE  India 88/5 v Pakistan 91/2*": the red tag only while a side is batting. */
+    private static CharSequence scoreLine(String[] m) {
+        String body = side(m[0], m[1], "1".equals(m[4])) + "  v  " + side(m[2], m[3], "2".equals(m[4]));
+        if ("0".equals(m[4])) return "🏏  " + body;
+        android.text.SpannableString s = new android.text.SpannableString("● LIVE  " + body);
+        s.setSpan(new android.text.style.ForegroundColorSpan(0xFFFF5A5F), 0, 6, 0);
+        return s;
+    }
+
+    private static String side(String team, String score, boolean batting) {
+        return team + (score.isEmpty() ? "" : " " + score) + (batting ? "*" : "");
     }
 
     /** Called on every return to Home: rebuilds the recent row and, at most every few minutes, the weather. */
     void refresh() {
+        refreshCricket();
         container.removeCallbacks(frostTask);
         container.postDelayed(frostTask, 1200);
         container.postDelayed(frostTask, 6000);
