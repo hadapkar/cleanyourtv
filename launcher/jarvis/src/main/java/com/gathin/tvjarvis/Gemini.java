@@ -40,7 +40,14 @@ final class Gemini {
             + "suggestions; give real titles available in India on the listed apps. set_city: the owner wants the weather "
             + "for another city from now on. answer: anything else; put the "
             + "answer in say, at most two sentences. Only use package names from the list. Option titles must be real "
-            + "films or shows, never categories such as \"Netflix thrillers\". Use \"\" rather than null.";
+            + "films or shows, never categories such as \"Netflix thrillers\". Use \"\" rather than null. "
+            + "If the owner names an app for a search, use that app; otherwise pick the app that streams the title "
+            + "(see the list of titles when it has it). Keep say under 15 words. Examples: "
+            + "\"play family man\" -> search, Prime Video, query \"The Family Man\"; "
+            + "\"arijit singh ke gaane lagao\" -> search, YouTube, query \"Arijit Singh songs\"; "
+            + "\"kuch comedy dikhao\" -> options with five comedies; "
+            + "\"mumbai ka weather\" -> set_city, city \"Mumbai\"; "
+            + "\"who won the last world cup\" -> answer.";
 
     private Gemini() {
     }
@@ -59,8 +66,12 @@ final class Gemini {
         e.apply();
     }
 
-    /** Blocking. {apps} are "Label=package" lines. Throws with a readable message on any failure. */
-    static JSONObject ask(Context ctx, String spoken, List<String> apps) throws IOException, JSONException {
+    /**
+     * Blocking. {heard} are the recognizer's guesses, best first; {apps} are "Label=package" lines; {titles} are
+     * "Title (Service)" lines streaming on this TV, possibly empty. Throws with a readable message on any failure.
+     */
+    static JSONObject ask(Context ctx, List<String> heard, List<String> apps, List<String> titles)
+            throws IOException, JSONException {
         String key = key(ctx);
         if (key.isEmpty()) throw new IOException("Gemini is not set up yet");
         String model = prefs(ctx).getString("model", DEFAULT_MODEL);
@@ -68,10 +79,9 @@ final class Gemini {
                 .put("systemInstruction", new JSONObject().put("parts", new JSONArray()
                         .put(new JSONObject().put("text", SYSTEM))))
                 .put("contents", new JSONArray().put(new JSONObject().put("role", "user").put("parts", new JSONArray()
-                        .put(new JSONObject().put("text", "Installed apps:\n" + String.join("\n", apps)
-                                + "\n\nThe owner said: " + spoken)))))
+                        .put(new JSONObject().put("text", prompt(heard, apps, titles))))))
                 .put("generationConfig", new JSONObject().put("responseMimeType", "application/json")
-                        .put("temperature", 0.4));
+                        .put("temperature", 0.2));
         IOException last = null;
         for (int attempt = 0; attempt < 3; attempt++) {
             // A busy first model hands the later attempts to the fallback.
@@ -118,6 +128,16 @@ final class Gemini {
             }
         }
         throw last != null ? last : new IOException("No answer from Gemini");
+    }
+
+    private static String prompt(List<String> heard, List<String> apps, List<String> titles) {
+        StringBuilder p = new StringBuilder("Installed apps:\n").append(String.join("\n", apps));
+        if (!titles.isEmpty()) {
+            p.append("\n\nSome titles streaming on these apps in India now:\n").append(String.join("\n", titles));
+        }
+        p.append("\n\nSpeech recognition heard (best guess first; it may mishear names, pick the most sensible):\n");
+        for (int i = 0; i < heard.size(); i++) p.append(i + 1).append(". ").append(heard.get(i)).append('\n');
+        return p.toString();
     }
 
     /** The model is overloaded or rate-limited; another model may answer. */

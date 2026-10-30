@@ -13,6 +13,10 @@
             <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
         <provider android:authorities="com.gathin.tvweather" />
+        <provider android:authorities="com.gathin.tvdiscover" />
+        <intent>
+            <action android:name="android.search.action.GLOBAL_SEARCH" />
+        </intent>
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LEANBACK_LAUNCHER" />

@@ -58,6 +58,18 @@ public class JarvisActivity extends Activity {
     private TextToSpeech tts;
     private boolean ttsReady;
     private float d;
+    private TextView hints;
+    /** One automatic retry when nothing was heard, so a slow start to speaking is not an error. */
+    private boolean retried;
+    /** An app about to open; Back within the short delay cancels it (a misheard name). */
+    private Runnable pending;
+    /** Spoken names to the package they mean, beyond the apps' own labels. */
+    private static final String[][] ALIASES = {
+            {"hotstar", "in.startv.hotstar"}, {"jio hotstar", "in.startv.hotstar"}, {"prime", "com.amazon.amazonvideo.livingroom"},
+            {"amazon", "com.amazon.amazonvideo.livingroom"}, {"sony", "com.sonyliv"}, {"sony liv", "com.sonyliv"},
+            {"coco flix", "com.app.bluesun"}, {"cocoflix", "com.app.bluesun"}, {"cricfy", "app.cricfy.tv"},
+            {"youtube music", "com.google.android.youtube.tvmusic"}, {"you tube", "com.google.android.youtube.tv"},
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -88,9 +100,13 @@ public class JarvisActivity extends Activity {
         choices = new LinearLayout(this);
         choices.setGravity(Gravity.CENTER_HORIZONTAL);
         col.addView(choices, centred(28));
+        hints = label(15, 0x99FFFFFF, "sans-serif");
+        hints.setText("Try  \u201COpen Netflix\u201D   \u00b7   \u201CPlay Arijit Singh songs\u201D   \u00b7   "
+                + "\u201CSuggest a comedy\u201D   \u00b7   \u201CWeather in Mumbai\u201D");
+        col.addView(hints, centred(30));
         TextView keys = label(13, 0x80FFFFFF, "sans-serif");
         keys.setText("OK  Ask again      Back  Close");
-        col.addView(keys, centred(36));
+        col.addView(keys, centred(18));
         setContentView(root);
         tts = new TextToSpeech(this, st -> ttsReady = st == TextToSpeech.SUCCESS);
 
@@ -127,6 +143,8 @@ public class JarvisActivity extends Activity {
 
     private void listen() {
         if (tts != null) tts.stop();
+        cancelPending();
+        hints.setVisibility(View.VISIBLE);
         choices.removeAllViews();
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_MIC);
@@ -136,6 +154,7 @@ public class JarvisActivity extends Activity {
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
                 .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
                 .putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getPackageName());
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
             // No recognition service to bind to: the system's own voice screen still may exist.
@@ -165,16 +184,21 @@ public class JarvisActivity extends Activity {
         @Override
         public void onError(int error) {
             orb.setMode(OrbView.IDLE);
-            showState("Didn't catch that", "",
-                    error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
-                            ? "Press OK and try again." : "Speech service error " + error + ". Press OK to retry.");
+            boolean nothingHeard = error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT;
+            if (nothingHeard && !retried) {
+                retried = true;
+                status.setText("Still listening");
+                handler.postDelayed(JarvisActivity.this::listen, 300);
+                return;
+            }
+            showState(nothingHeard ? "Didn't catch that" : "Couldn't listen", "", friendly(error));
         }
 
         @Override
         public void onResults(Bundle results) {
             List<String> r = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
             if (r == null || r.isEmpty()) onError(SpeechRecognizer.ERROR_NO_MATCH);
-            else understood(r.get(0));
+            else understood(r);
         }
 
         @Override
@@ -191,7 +215,7 @@ public class JarvisActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode != REQ_SPEECH) return;
         ArrayList<String> r = data == null ? null : data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
-        if (resultCode == RESULT_OK && r != null && !r.isEmpty()) understood(r.get(0));
+        if (resultCode == RESULT_OK && r != null && !r.isEmpty()) understood(r);
         else showState("Didn't catch that", "", "Press OK and try again.");
     }
 
@@ -204,14 +228,44 @@ public class JarvisActivity extends Activity {
 
     // ---- thinking and acting ---------------------------------------------------------------------
 
-    private void understood(String said) {
-        heard.setText("“" + said + "”");
+    /** What each speech error means for the owner, and what to do. */
+    private static String friendly(int error) {
+        switch (error) {
+            case SpeechRecognizer.ERROR_NO_MATCH:
+            case SpeechRecognizer.ERROR_SPEECH_TIMEOUT:
+                return "Press OK and speak right after the beep, with the remote in front of you.";
+            case SpeechRecognizer.ERROR_NETWORK:
+            case SpeechRecognizer.ERROR_NETWORK_TIMEOUT:
+            case SpeechRecognizer.ERROR_SERVER:
+                return "Google's speech service is not reachable. Check the TV's internet and press OK.";
+            case SpeechRecognizer.ERROR_AUDIO:
+                return "The remote's microphone is not sending sound. Press OK to try again.";
+            case SpeechRecognizer.ERROR_RECOGNIZER_BUSY:
+                return "The speech service is busy. Wait a second and press OK.";
+            case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS:
+                return "Jarvis is not allowed to use the microphone.";
+            default:
+                return "Something went wrong with listening. Press OK to try again.";
+        }
+    }
+
+    private void understood(List<String> alternatives) {
+        retried = false;
+        hints.setVisibility(View.GONE);
+        String said = alternatives.get(0);
+        heard.setText("\u201C" + said + "\u201D");
+        // "Open Netflix", "Hotstar kholo": a known app and an open word need no round trip to Gemini.
+        String local = localOpen(alternatives);
+        if (local != null) {
+            openSoon(local);
+            return;
+        }
         status.setText("Thinking");
         orb.setMode(OrbView.THINKING);
         List<String> apps = installedApps();
         new Thread(() -> {
             try {
-                JSONObject a = Gemini.ask(this, said, apps);
+                JSONObject a = Gemini.ask(this, alternatives, apps, catalogue());
                 handler.post(() -> act(a));
             } catch (Exception e) {
                 handler.post(() -> {
@@ -229,10 +283,12 @@ public class JarvisActivity extends Activity {
         String query = str(a, "query");
         status.setText("Jarvis");
         reply.setText(str(a, "say"));
-        speak(str(a, "say"));
+        // Spoken only when there is something to hear; opening an app speaks for itself.
+        if (!action.equals("open_app") && !action.equals("search")) speak(str(a, "say"));
         switch (action) {
             case "open_app":
-                if (!launch(app)) reply.setText("That app is not on this TV.");
+                if (!installed(app)) reply.setText("That app is not on this TV.");
+                else openSoon(app);
                 break;
             case "search":
                 if (!search(app, query)) reply.setText("That app is not on this TV.");
@@ -246,6 +302,97 @@ public class JarvisActivity extends Activity {
             default:
                 break;
         }
+    }
+
+    /** The package of an app named together with an open word ("open", "launch", "start", "kholo", "chalao"). */
+    private String localOpen(List<String> alternatives) {
+        PackageManager pm = getPackageManager();
+        List<String[]> names = new ArrayList<>();   // {normalised name, package}
+        for (String line : installedApps()) {
+            int eq = line.lastIndexOf('=');
+            names.add(new String[]{norm(line.substring(0, eq)), line.substring(eq + 1)});
+        }
+        for (String[] a : ALIASES) names.add(new String[]{norm(a[0]), a[1]});
+        for (String said : alternatives) {
+            String s = " " + norm(said) + " ";
+            // Anything about content goes to Gemini: "play Family Man on Netflix" is a search, not an open.
+            if (s.matches(".*\\b(play|search|find|show me|suggest|song|songs|gaana|gaane|movie|film|episode|watch)\\b.*")) return null;
+            boolean openWord = s.matches(".*\\b(open|launch|start|kholo|khol|chalao|chalu|run|go to)\\b.*");
+            String flat = s.replace(" ", "");
+            String best = null;
+            int bestLen = 0;
+            for (String[] n : names) {
+                String key = n[0].replace(" ", "");
+                if (key.length() < 3 || !flat.contains(key) || key.length() <= bestLen) continue;
+                try {
+                    pm.getApplicationInfo(n[1], 0);
+                } catch (PackageManager.NameNotFoundException e) {
+                    continue;
+                }
+                best = n[1];
+                bestLen = key.length();
+            }
+            // A bare app name ("Netflix") counts too.
+            if (best != null && (openWord || flat.length() <= bestLen + 4)) return best;
+        }
+        return null;
+    }
+
+    private static String norm(String s) {
+        return s.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9 ]", " ").replaceAll("\\s+", " ").trim();
+    }
+
+    private boolean installed(String pkg) {
+        if (pkg == null || pkg.isEmpty()) return false;
+        try {
+            getPackageManager().getApplicationInfo(pkg, 0);
+            return true;
+        } catch (PackageManager.NameNotFoundException e) {
+            return false;
+        }
+    }
+
+    /** Shows "Opening <app>" for a moment, so Back can stop a misheard name, then opens it. */
+    private void openSoon(String pkg) {
+        orb.setMode(OrbView.IDLE);
+        status.setText("Opening");
+        reply.setText(label(pkg) + "  \u00b7  Back to cancel");
+        cancelPending();
+        pending = () -> {
+            pending = null;
+            if (!launch(pkg)) reply.setText("That app is not on this TV.");
+        };
+        handler.postDelayed(pending, 900);
+    }
+
+    private void cancelPending() {
+        if (pending == null) return;
+        handler.removeCallbacks(pending);
+        pending = null;
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (pending != null) {
+            cancelPending();
+            showState("Cancelled", heard.getText().toString(), "Press OK to ask again.");
+            return;
+        }
+        super.onBackPressed();
+    }
+
+    /** "Title (Service)" for titles TV Discover knows, so Gemini can send a title to the app that has it. */
+    private List<String> catalogue() {
+        List<String> out = new ArrayList<>();
+        try (android.database.Cursor c = getContentResolver().query(
+                android.net.Uri.parse("content://com.gathin.tvdiscover/catalogue"), null, null, null, null)) {
+            while (c != null && c.moveToNext() && out.size() < 80) {
+                out.add(c.getString(c.getColumnIndexOrThrow("title")) + " (" + c.getString(c.getColumnIndexOrThrow("service")) + ")");
+            }
+        } catch (RuntimeException ignored) {
+            // TV Discover not installed or not set up: Gemini goes by what it knows.
+        }
+        return out;
     }
 
     /** optString turns a JSON null into the word "null"; models send null for empty fields. */
@@ -377,23 +524,48 @@ public class JarvisActivity extends Activity {
     }
 
     /**
-     * Searches inside the app when it takes a search request (YouTube does), otherwise opens the app with the
-     * title on screen, since most streaming apps accept no search from outside.
+     * The most accurate search each app allows, as measured on the MiTV-AESP0: YouTube opens its results page from
+     * a link; apps with an in-app search (JioHotstar, VLC) take ACTION_SEARCH; Netflix, Prime Video and SonyLIV take
+     * neither, so Google TV search shows the title with a "Watch on ..." button that opens it in the right app.
      */
     private boolean search(String pkg, String query) {
-        if (pkg == null || pkg.isEmpty()) return false;
-        Intent s = new Intent(Intent.ACTION_SEARCH).setPackage(pkg).putExtra(SearchManager.QUERY, query)
+        if (pkg == null || pkg.isEmpty() || !installed(pkg)) return false;
+        if (query == null || query.trim().isEmpty()) return launch(pkg);
+        PackageManager pm = getPackageManager();
+        try {
+            if (pkg.equals("com.google.android.youtube.tv")) {
+                Intent yt = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.youtube.com/results?search_query="
+                        + java.net.URLEncoder.encode(query, "UTF-8"))).setPackage(pkg).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                if (!pm.queryIntentActivities(yt, 0).isEmpty()) {
+                    startActivity(yt);
+                    return true;
+                }
+            }
+        } catch (java.io.UnsupportedEncodingException | RuntimeException ignored) {
+            // Try the next route.
+        }
+        Intent own = new Intent(Intent.ACTION_SEARCH).setPackage(pkg).putExtra(SearchManager.QUERY, query)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        if (!getPackageManager().queryIntentActivities(s, 0).isEmpty()) {
+        if (!pm.queryIntentActivities(own, 0).isEmpty()) {
             try {
-                startActivity(s);
+                startActivity(own);
+                return true;
+            } catch (RuntimeException ignored) {
+                // Try Google TV search.
+            }
+        }
+        Intent google = new Intent("android.search.action.GLOBAL_SEARCH").putExtra(SearchManager.QUERY, query)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        if (!pm.queryIntentActivities(google, 0).isEmpty()) {
+            try {
+                startActivity(google);
                 return true;
             } catch (RuntimeException ignored) {
                 // Fall back to opening the app.
             }
         }
         if (!launch(pkg)) return false;
-        android.widget.Toast.makeText(this, "Search for “" + query + "” in " + label(pkg),
+        android.widget.Toast.makeText(this, "Search for \u201C" + query + "\u201D in " + label(pkg),
                 android.widget.Toast.LENGTH_LONG).show();
         return true;
     }

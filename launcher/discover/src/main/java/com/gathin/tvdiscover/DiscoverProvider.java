@@ -48,6 +48,7 @@ public class DiscoverProvider extends ContentProvider {
         }
         maybeRefresh(false);
         List<JSONObject> list = "queue".equals(what) ? Catalog.queue(getContext())
+                : "catalogue".equals(what) ? Catalog.all(getContext())
                 : Catalog.forYou(getContext(), 12);
         MatrixCursor c = new MatrixCursor(COLUMNS);
         for (JSONObject t : list) {
