@@ -10,6 +10,7 @@
 //   node adbtv.js <host> gemini-key <file> [model]   give Jarvis its Gemini API key (from a local file)
 //   node adbtv.js <host> key-service on|off          the launcher's remote-button helper (mic button -> Jarvis)
 //   node adbtv.js <host> grant-addons               runtime permissions for the add-ons (TV listings, mic)
+//   node adbtv.js <host> pull <remote-file> <local-file>
 //   node adbtv.js <host> screenshot <out.png>       capture the TV screen (binary-safe exec: service)
 //   node adbtv.js <host> pull-state <out-file>      save enabled and disabled package lists to a file
 //
@@ -249,6 +250,10 @@ async function main() {
     } else if (verb === 'grant-addons') {
       process.stdout.write(await adb.shell('pm grant com.gathin.tvdiscover android.permission.READ_TV_LISTINGS && echo tv-listings granted; '
         + 'pm grant com.gathin.tvjarvis android.permission.RECORD_AUDIO && echo mic granted'));
+    } else if (verb === 'pull') {
+      const data = await adb.exec('cat ' + args[0]);
+      fs.writeFileSync(args[1], data);
+      console.log(`pulled ${data.length} bytes to ${args[1]}`);
     } else if (verb === 'screenshot') {
       const png = await adb.exec('screencap -p');
       if (png.subarray(1, 4).toString() !== 'PNG') throw new Error('not a PNG: ' + png.subarray(0, 80).toString());

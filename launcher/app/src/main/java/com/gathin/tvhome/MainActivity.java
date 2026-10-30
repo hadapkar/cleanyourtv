@@ -150,6 +150,25 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      */
     private long launchingUntil;
     private final Runnable hideOpeningTask = this::hideOpening;
+    /**
+     * The remote's power button puts this TV in standby rather than off (uptime runs on), so the start-up title
+     * also plays when the screen comes back on after a few seconds off and Home is what shows.
+     */
+    private long screenOffAt;
+    private boolean introOnResume;
+    private final BroadcastReceiver screenReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (Intent.ACTION_SCREEN_OFF.equals(intent.getAction())) {
+                screenOffAt = android.os.SystemClock.elapsedRealtime();
+            } else if (Intent.ACTION_SCREEN_ON.equals(intent.getAction()) && screenOffAt > 0
+                    && android.os.SystemClock.elapsedRealtime() - screenOffAt > 3000) {
+                screenOffAt = 0;
+                if (resumed) BootIntro.showNow(MainActivity.this, root);
+                else introOnResume = true;
+            }
+        }
+    };
     private WallpaperPlayer wallpaperPlayer;
     private GlassView glass;
     private View ambient;
@@ -478,6 +497,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         coocaaSources = cfg.coocaaSources;
 
         root = findViewById(R.id.root);
+        if (BootIntro.enabled(this)) {
+            IntentFilter screen = new IntentFilter(Intent.ACTION_SCREEN_ON);
+            screen.addAction(Intent.ACTION_SCREEN_OFF);
+            registerReceiver(screenReceiver, screen);   // system broadcasts only
+        }
         root.setBackgroundColor(cfg.backgroundColor);
         // root fills the window with an opaque colour (Config keeps background_color opaque), so the window's own
         // black under it is a second full-screen fill on every frame for nothing. The starting window still uses
@@ -1041,6 +1065,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         promptsPaused = false;
         if (grid.getAdapter() == null) grid.setAdapter(adapter);   // dropped by onTrimMemory
         hideOpening();
+        if (introOnResume) {
+            introOnResume = false;
+            BootIntro.showNow(this, root);
+        }
         if (!cardHomeChecked) {
             BootIntro.maybeShow(this, root, getIntent() != null && getIntent().getBooleanExtra("show_intro", false));
             cardHomeChecked = true;
@@ -1318,6 +1346,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     @Override
     protected void onDestroy() {
+        try {
+            unregisterReceiver(screenReceiver);
+        } catch (RuntimeException ignored) {
+            // Never registered (no intro in the theme).
+        }
         super.onDestroy();
         if (gameDay != null) gameDay.shutdown();
         unregisterReceiver(packageReceiver);

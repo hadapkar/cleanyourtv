@@ -15,7 +15,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 /**
- * A start-up title on black the first time Home appears after the TV boots (config.json boot_intro_title and,
+ * A start-up title on black the first time Home appears after the TV boots or wakes from standby (config.json boot_intro_title and,
  * under it at a quarter of the size, boot_intro_subtitle). The title's letters draw together from wide
  * spacing as they fade in, the subtitle rises in after it, then the whole screen fades into Home. About
  * three seconds; any key skips it. The system's own boot animation is untouched (that needs root).
@@ -24,6 +24,17 @@ final class BootIntro {
     private static final String PREFS = "boot_intro";
 
     private BootIntro() {
+    }
+
+    /** Whether the theme sets an intro at all. */
+    static boolean enabled(Context ctx) {
+        return !CardHome.string(ctx, "boot_intro_title").isEmpty();
+    }
+
+    /** Shows the intro over root now (Home after the TV woke from standby). */
+    static void showNow(Activity activity, FrameLayout root) {
+        if (!enabled(activity)) return;
+        show(activity, root, CardHome.string(activity, "boot_intro_title"), CardHome.string(activity, "boot_intro_subtitle"));
     }
 
     /** Shows the intro over root if this is the first Home since boot (or {@code force}). */
