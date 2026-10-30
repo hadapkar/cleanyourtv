@@ -197,6 +197,12 @@ final class PersonalizePanel {
         e.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
         e.setPadding(px(16), px(10), px(16), px(10));
         e.setBackground(rowBackground());
+        // The keyboard waits for OK: focus alone must not open it, or the arrows type into the field.
+        e.setShowSoftInputOnFocus(false);
+        e.setOnClickListener(v -> {
+            InputMethodManager imm = activity.getSystemService(InputMethodManager.class);
+            if (imm != null) imm.showSoftInput(v, InputMethodManager.SHOW_IMPLICIT);
+        });
         card.addView(e, margins(6));
         return e;
     }

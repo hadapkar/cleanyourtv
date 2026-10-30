@@ -469,7 +469,9 @@ final class CardHome {
         // A few pixels of offset come from item decorations and layout settling, not from the owner moving down:
         // only a real move into the rows below (past 40 dp) slides the cards away.
         boolean away = offset > px(40);
-        float y = away ? -Math.min(offset, px(120)) : 0f;
+        // As on Apple TV, the cards move up with the page (so the rows never slide over them) and fade into the
+        // background as the rows come up.
+        float y = away ? -offset : 0f;
         // Compare with what is on screen, not only the last request, so cards hidden by an interrupted fade (or by
         // settleIn racing a scroll) always come back.
         boolean settled = container.getTranslationY() == y && container.getAlpha() == (away ? 0f : 1f)
@@ -478,7 +480,7 @@ final class CardHome {
         shelfAway = away;
         container.animate().cancel();
         if (!away) container.setVisibility(View.VISIBLE);
-        container.animate().alpha(away ? 0f : 1f).translationY(y).setDuration(away ? 240 : 300)
+        container.animate().alpha(away ? 0f : 1f).translationY(y).setDuration(away ? 420 : 360)
                 .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f))
                 .withEndAction(() -> {
                     // Faded out: the cards must not take focus or clicks under the app rows.
