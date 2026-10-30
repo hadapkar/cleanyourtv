@@ -66,6 +66,8 @@ public class JarvisActivity extends Activity {
     private TextView hints;
     /** One automatic retry when nothing was heard, so a slow start to speaking is not an error. */
     private boolean retried;
+    /** When listening last started (uptime ms), so a burst of presses starts it once. */
+    private long lastListen;
     /** An app about to open; Back within the short delay cancels it (a misheard name). */
     private Runnable pending;
     /** Something was playing when Jarvis opened over it: Back plays it again (players pause when covered). */
@@ -160,6 +162,8 @@ public class JarvisActivity extends Activity {
     // ---- listening -------------------------------------------------------------------------------
 
     private void listen() {
+        // Presses closer together than this are one press (a bouncing key, or OK just after the overlay opened).
+        if (android.os.SystemClock.uptimeMillis() - lastListen < 700) return;
         if (tts != null) voice.execute(() -> {
             try {
                 tts.stop();
@@ -195,6 +199,9 @@ public class JarvisActivity extends Activity {
         }
         showState("Listening", "", "");
         orb.setMode(OrbView.LISTENING);
+        // A session still open (OK pressed while listening) is ended first; otherwise the service ignores the new one.
+        recognizer.cancel();
+        lastListen = android.os.SystemClock.uptimeMillis();
         recognizer.startListening(intent);
     }
 
@@ -759,11 +766,15 @@ public class JarvisActivity extends Activity {
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         boolean ok = keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER;
+        boolean voiceKey = keyCode == KeyEvent.KEYCODE_SEARCH || keyCode == KeyEvent.KEYCODE_VOICE_ASSIST;
+        // A held key repeats about 20 times a second: each repeat restarted listening, which the speech service
+        // refused as already running, and Jarvis flashed and never heard anything. Only the first press counts.
+        if ((ok || voiceKey) && event.getRepeatCount() > 0) return true;
         if (ok && (choices.getChildCount() == 0 || !choices.hasFocus())) {
             if (!Gemini.key(this).isEmpty()) listen();
             return true;
         }
-        if (keyCode == KeyEvent.KEYCODE_SEARCH || keyCode == KeyEvent.KEYCODE_VOICE_ASSIST) {
+        if (voiceKey) {
             listen();
             return true;
         }
