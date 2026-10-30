@@ -70,6 +70,8 @@ final class CardHome {
     private final TextView swipeCount;
     private final ImageView[] swipeStack = new ImageView[2];
     private int posterW, posterH, posterSlots;
+    /** The bottom-left card's items: three always fit its width, 16:9 artwork under its title. */
+    private int recentItemW, recentImgH;
     private TextView recentTitle;
     /** Blurred copy of what is behind the cards; drawn by every card's Frost background. Main thread only. */
     private android.graphics.Bitmap frost;
@@ -206,6 +208,11 @@ final class CardHome {
 
         LinearLayout recent = card(rightX, bottomY, recentW, bottomH);
         recent.setPadding(px(24), px(14), px(24), px(10));
+        int recentInner = recentW - px(48);
+        recentItemW = (recentInner - 2 * px(10)) / 3;
+        // Height left under the title for artwork and a one-line name.
+        int room = bottomH - px(14 + 10) - px(24) - px(22);
+        recentImgH = Math.min(recentItemW * 9 / 16, room);
         recentTitle = kicker("Recently opened");
         recent.addView(recentTitle);
         recentRow = new LinearLayout(activity);
@@ -315,12 +322,12 @@ final class CardHome {
     }
 
     private LinearLayout.LayoutParams first() {
-        return new LinearLayout.LayoutParams(px(66), -2);
+        return new LinearLayout.LayoutParams(recentItemW, -2);
     }
 
     private LinearLayout.LayoutParams next() {
         LinearLayout.LayoutParams lp = first();
-        lp.leftMargin = px(12);
+        lp.leftMargin = px(10);
         return lp;
     }
 
@@ -338,8 +345,8 @@ final class CardHome {
             }
         });
         image.setClipToOutline(true);
-        item.addView(image, new LinearLayout.LayoutParams(-1, px(38)));
-        TextView name = text(11, 0xCCFFFFFF, "sans-serif", 0.02f);
+        item.addView(image, new LinearLayout.LayoutParams(-1, recentImgH));
+        TextView name = text(12, 0xCCFFFFFF, "sans-serif", 0.02f);
         name.setSingleLine(true);
         name.setEllipsize(android.text.TextUtils.TruncateAt.END);
         name.setText(label);
@@ -454,12 +461,12 @@ final class CardHome {
             if (progress > 0) {
                 View bar = new View(activity);
                 bar.setBackgroundColor(0xFFE50914);
-                FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(px(66 - 8) * progress / 100, px(3),
+                FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams((recentItemW - px(8)) * progress / 100, px(3),
                         Gravity.BOTTOM | Gravity.START);
                 frame.addView(bar, blp);
             }
-            item.addView(frame, new LinearLayout.LayoutParams(-1, px(38)));
-            TextView name = text(11, 0xCCFFFFFF, "sans-serif", 0.02f);
+            item.addView(frame, new LinearLayout.LayoutParams(-1, recentImgH));
+            TextView name = text(12, 0xCCFFFFFF, "sans-serif", 0.02f);
             name.setSingleLine(true);
             name.setEllipsize(android.text.TextUtils.TruncateAt.END);
             name.setText(r[0]);
