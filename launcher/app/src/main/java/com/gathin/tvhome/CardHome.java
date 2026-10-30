@@ -255,6 +255,20 @@ final class CardHome {
         makeFocusable(jarvis, this::openAssistant);
     }
 
+    /**
+     * The app grid scrolled by {@code offset} px (Down from the dock into the rows below). The cards move up with
+     * it and fade out over the first third of the screen, as Apple TV's top section does, instead of tiles
+     * sliding over them; they come back as the grid scrolls home.
+     */
+    void onGridScrolled(int offset) {
+        float h = container.getHeight() > 0 ? container.getHeight() : activity.getResources().getDisplayMetrics().heightPixels;
+        float t = Math.max(0f, Math.min(1f, offset / (h * 0.33f)));
+        container.setTranslationY(-offset);
+        container.setAlpha(1f - t);
+        // Faded out: the cards must not take focus or clicks under the app rows.
+        container.setVisibility(t >= 1f ? View.INVISIBLE : View.VISIBLE);
+    }
+
     /** The greeting line the launcher already works out (time of day, name, festival). */
     void setGreeting(CharSequence text) {
         greeting.setText(text);

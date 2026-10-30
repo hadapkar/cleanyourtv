@@ -1077,6 +1077,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             View main = grid;
             while (main.getParent() != root) main = (View) main.getParent();
             cardHome = CardHome.create(this, root, main);
+            if (cardHome != null) {
+                grid.addOnScrollListener(new RecyclerView.OnScrollListener() {
+                    @Override
+                    public void onScrolled(@NonNull RecyclerView rv, int dx, int dy) {
+                        cardHome.onGridScrolled(rv.computeVerticalScrollOffset());
+                    }
+                });
+            }
             // The cards carry their own greeting, clock and date; the header keeps its space so nothing moves.
             if (cardHome != null) clockBlock.setVisibility(View.INVISIBLE);
         }
