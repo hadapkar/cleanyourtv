@@ -72,6 +72,8 @@ final class CardHome {
     private int posterW, posterH, posterSlots;
     /** The bottom-left card's items: three always fit its width, 16:9 artwork under its title. */
     private int recentItemW, recentImgH;
+    /** How many items the bottom-left card shows: as many as fit at a readable size, at most four. */
+    private int recentSlots = 3;
     private TextView recentTitle;
     /** Blurred copy of what is behind the cards; drawn by every card's Frost background. Main thread only. */
     private android.graphics.Bitmap frost;
@@ -170,7 +172,7 @@ final class CardHome {
         int topRowH = (int) ((bottom - top - rowGap) * 0.56f);
         int forYouW = (int) ((rightW - gap) * 0.70f), swipeW = rightW - gap - forYouW;
         int bottomY = top + topRowH + rowGap, bottomH = bottom - bottomY;
-        int recentW = (int) ((rightW - gap) * 0.50f), jarvisW = rightW - gap - recentW;
+        int recentW = forYouW, jarvisW = swipeW;
 
         LinearLayout forYou = card(rightX, top, forYouW, topRowH);
         forYou.setPadding(px(24), px(16), px(24), px(14));
@@ -209,7 +211,8 @@ final class CardHome {
         LinearLayout recent = card(rightX, bottomY, recentW, bottomH);
         recent.setPadding(px(24), px(14), px(24), px(10));
         int recentInner = recentW - px(48);
-        recentItemW = (recentInner - 2 * px(10)) / 3;
+        recentSlots = recentInner >= px(4 * 96 + 3 * 10) ? 4 : 3;
+        recentItemW = (recentInner - (recentSlots - 1) * px(10)) / recentSlots;
         // Height left under the title for artwork and a one-line name.
         int room = bottomH - px(14 + 10) - px(24) - px(22);
         recentImgH = Math.min(recentItemW * 9 / 16, room);
@@ -225,22 +228,18 @@ final class CardHome {
 
         // Jarvis.
         LinearLayout jarvis = card(rightX + recentW + gap, bottomY, jarvisW, bottomH);
-        jarvis.setOrientation(LinearLayout.HORIZONTAL);
-        jarvis.setGravity(Gravity.CENTER_VERTICAL);
-        jarvis.setPadding(px(26), px(8), px(22), px(8));
-        LinearLayout words = new LinearLayout(activity);
-        words.setOrientation(LinearLayout.VERTICAL);
-        TextView jarvisKicker = kicker("Jarvis");
-        TextView ask = text(28, 0xFFFFFFFF, "sans-serif-light", -0.01f);
-        ask.setText("Just ask.");
-        TextView hint = text(14, 0x99FFFFFF, "sans-serif", 0.02f);
-        hint.setText("OK to speak");
-        words.addView(jarvisKicker);
-        words.addView(ask);
-        words.addView(hint);
-        jarvis.addView(words, new LinearLayout.LayoutParams(0, -2, 1f));
+        // Laid out like the Swipe card above it: title, the orb in the middle, one short line under it.
+        jarvis.setPadding(px(20), px(14), px(20), px(12));
+        jarvis.addView(kicker("Jarvis"));
+        FrameLayout orbBox = new FrameLayout(activity);
         orb = new OrbView(activity);
-        jarvis.addView(orb, new LinearLayout.LayoutParams(px(58), px(58)));
+        int orbSize = Math.min(px(64), bottomH - px(14 + 12) - px(24 + 26));
+        orbBox.addView(orb, new FrameLayout.LayoutParams(orbSize, orbSize, Gravity.CENTER));
+        jarvis.addView(orbBox, new LinearLayout.LayoutParams(-1, 0, 1f));
+        TextView hint = text(13, 0xCCFFFFFF, "sans-serif", 0.02f);
+        hint.setText("Just ask · OK");
+        hint.setGravity(Gravity.CENTER_HORIZONTAL);
+        jarvis.addView(hint, new LinearLayout.LayoutParams(-1, -2));
         makeFocusable(jarvis, this::openAssistant);
     }
 
@@ -300,7 +299,7 @@ final class CardHome {
         PackageManager pm = activity.getPackageManager();
         int shown = 0;
         for (String pkg : LastOpened.recent(activity, 12)) {
-            if (shown == 3) break;
+            if (shown == recentSlots) break;
             Intent launch = pm.getLeanbackLaunchIntentForPackage(pkg);
             if (launch == null) launch = pm.getLaunchIntentForPackage(pkg);
             if (launch == null) continue;
@@ -372,7 +371,7 @@ final class CardHome {
         java.util.List<String[]> resume = new java.util.ArrayList<>();   // {title, pkg, intent, progress, poster}
         if (installed) {
             try (Cursor c = activity.getContentResolver().query(CONTINUE, null, null, null, null)) {
-                while (c != null && c.moveToNext() && resume.size() < 3) {
+                while (c != null && c.moveToNext() && resume.size() < 4) {
                     resume.add(new String[]{c.getString(c.getColumnIndexOrThrow("title")),
                             c.getString(c.getColumnIndexOrThrow("pkg")), c.getString(c.getColumnIndexOrThrow("intent")),
                             String.valueOf(c.getInt(c.getColumnIndexOrThrow("progress"))),
@@ -475,6 +474,7 @@ final class CardHome {
             nameLp.topMargin = px(4);
             item.addView(name, nameLp);
             makeFocusable(item, () -> openIntent(r[2], r[1]));
+            if (i == recentSlots) break;
             recentRow.addView(item, i == 0 ? first() : next());
         }
         recentHint.setVisibility(View.GONE);
