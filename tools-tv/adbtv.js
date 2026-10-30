@@ -275,6 +275,13 @@ async function restore(adb, dir) {
   if ((tv.disabled || []).length) console.log('  disabled in the backup (not changed): ' + tv.disabled.join(', '));
   // Home applies its settings when it starts.
   process.stdout.write(await adb.shell('am force-stop com.gathin.tvhome; am start -W -n com.gathin.tvhome/.MainActivity | grep -E "Status|Error"'));
+  // A force stop of Home drops its remote-button helper on Xiaomi firmware: put it back, last.
+  const svc = 'com.gathin.tvhome/com.gathin.tvhome.HomeKeyService';
+  const cur = (await adb.shell('settings get secure enabled_accessibility_services')).trim();
+  const list = cur && cur !== 'null' ? cur.split(':').filter((e) => e && e !== svc) : [];
+  list.push(svc);
+  await adb.shell(`settings put secure enabled_accessibility_services ${list.join(':')}; settings put secure accessibility_enabled 1`);
+  console.log('  button helper: ' + (await adb.shell('settings get secure enabled_accessibility_services')).trim());
 }
 
 async function main() {
