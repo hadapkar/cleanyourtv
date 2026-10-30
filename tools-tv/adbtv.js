@@ -216,6 +216,8 @@ async function backup(adb, dir) {
   files['home-settings.json'] = await json(`${HOME_FILES}/backup/home.json`);
   await adb.shell('content call --uri content://com.gathin.tvdiscover --method export');
   files['discover.json'] = await json(`${DISCOVER_FILES}/backup.json`);
+  // Shared storage is readable by apps with storage access: the copy is not left there once it is here.
+  await adb.shell(`rm -f ${DISCOVER_FILES}/backup.json`);
   const weather = await adb.shell('content query --uri content://com.gathin.tvweather/current');
   const city = (weather.match(/\bcity=([^,\n]+)/) || [])[1] || '';
   const settings = {};

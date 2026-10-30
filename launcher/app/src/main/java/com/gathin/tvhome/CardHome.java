@@ -714,9 +714,11 @@ final class CardHome {
             // An older TV Discover without the shelf, or not answering: no shelf.
         }
         int max = s.wide ? 6 : 5;
+        // A third of the card for landscape tiles, a fifth for posters (fillShelf's columns).
+        int tileW = (gRightW - px(48)) / (s.wide ? 3 : 5);
         for (String[] r : rows) {
             if (s.rows.size() >= max) break;
-            android.graphics.Bitmap b = decodePoster(r[2]);
+            android.graphics.Bitmap b = decodeArt(r[2], tileW);
             if (b == null) continue;
             s.rows.add(new String[]{r[0], r[1]});
             s.art.add(b);
@@ -1523,6 +1525,33 @@ final class CardHome {
         @Override public void setAlpha(int alpha) { glass.setAlpha(alpha); }
         @Override public void setColorFilter(android.graphics.ColorFilter cf) { glass.setColorFilter(cf); }
         @Override public int getOpacity() { return android.graphics.PixelFormat.TRANSLUCENT; }
+    }
+
+    /**
+     * Shelf artwork at about the tile's width: apps publish large images (Netflix's are over 1000 px wide), and a fixed
+     * half size kept several megabytes per shelf in the cache on a 1 GB TV.
+     */
+    private android.graphics.Bitmap decodeArt(String uri, int maxW) {
+        if (uri == null) return null;
+        try {
+            android.graphics.BitmapFactory.Options bounds = new android.graphics.BitmapFactory.Options();
+            bounds.inJustDecodeBounds = true;
+            try (android.os.ParcelFileDescriptor fd = activity.getContentResolver().openFileDescriptor(Uri.parse(uri), "r")) {
+                if (fd == null) return null;
+                android.graphics.BitmapFactory.decodeFileDescriptor(fd.getFileDescriptor(), null, bounds);
+            }
+            int sample = 1;
+            while (bounds.outWidth / (sample * 2) >= maxW) sample *= 2;
+            try (android.os.ParcelFileDescriptor fd = activity.getContentResolver().openFileDescriptor(Uri.parse(uri), "r")) {
+                if (fd == null) return null;
+                android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
+                o.inSampleSize = sample;
+                o.inPreferredConfig = android.graphics.Bitmap.Config.RGB_565;
+                return android.graphics.BitmapFactory.decodeFileDescriptor(fd.getFileDescriptor(), null, o);
+            }
+        } catch (Exception | OutOfMemoryError e) {
+            return null;
+        }
     }
 
     private android.graphics.Bitmap decodePoster(String uri) {

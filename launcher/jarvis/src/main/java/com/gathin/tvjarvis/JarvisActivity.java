@@ -68,6 +68,8 @@ public class JarvisActivity extends Activity {
     private boolean retried;
     /** When listening last started (uptime ms), so a burst of presses starts it once. */
     private long lastListen;
+    /** A recognition session is open; listen() cancelling it means its client error is expected. Main thread only. */
+    private boolean listening, ignoreClientError;
     /** An app about to open; Back within the short delay cancels it (a misheard name). */
     private Runnable pending;
     /** Something was playing when Jarvis opened over it: Back plays it again (players pause when covered). */
@@ -200,8 +202,11 @@ public class JarvisActivity extends Activity {
         showState("Listening", "", "");
         orb.setMode(OrbView.LISTENING);
         // A session still open (OK pressed while listening) is ended first; otherwise the service ignores the new one.
+        // Google's recognizer then reports that cancelled session as a client error, which is not shown.
+        if (listening) ignoreClientError = true;
         recognizer.cancel();
         lastListen = android.os.SystemClock.uptimeMillis();
+        listening = true;
         recognizer.startListening(intent);
     }
 
@@ -214,8 +219,14 @@ public class JarvisActivity extends Activity {
 
         @Override
         public void onError(int error) {
-            // Google's recognizer reports the session listen() just cancelled as a client error; the new one runs.
-            if (error == SpeechRecognizer.ERROR_CLIENT && android.os.SystemClock.uptimeMillis() - lastListen < 1500) return;
+            // The session listen() cancelled reports a client error; the new one is still running. Any other
+            // error, even a client error right at the start, is shown, so Jarvis never sits on "Listening".
+            if (error == SpeechRecognizer.ERROR_CLIENT && ignoreClientError) {
+                ignoreClientError = false;
+                return;
+            }
+            ignoreClientError = false;
+            listening = false;
             orb.setMode(OrbView.IDLE);
             boolean nothingHeard = error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT;
             if (nothingHeard && !retried) {
@@ -229,6 +240,8 @@ public class JarvisActivity extends Activity {
 
         @Override
         public void onResults(Bundle results) {
+            listening = false;
+            ignoreClientError = false;
             List<String> r = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
             if (r == null || r.isEmpty()) onError(SpeechRecognizer.ERROR_NO_MATCH);
             else understood(r);
