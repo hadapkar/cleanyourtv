@@ -678,8 +678,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             public void onChildViewDetachedFromWindow(@NonNull View v) {
             }
         });
-        if (dockRow) grid.addItemDecoration(new DockDecoration(COLUMNS, density, cinematic, cfg.alwaysShowNames, cfg.dockOpacity, cfg.dockGlass, cfg.dockEvenPadding, cfg.dockBand,
-                singleRow, cfg.dockBandAll));
+        if (dockRow) {
+            DockDecoration bands = new DockDecoration(COLUMNS, density, cinematic, cfg.alwaysShowNames, cfg.dockOpacity,
+                    cfg.dockGlass, cfg.dockEvenPadding, cfg.dockBand, singleRow, cfg.dockBandAll);
+            bands.setBandEveryRow(CardHome.flag(this, "band_every_row"));
+            grid.addItemDecoration(bands);
+        }
         if (cfg.fadeRows) TopFade.attach(grid, 48 * density);
         // Reduced motion: the tiles are simply there, with no entrance (reloadApps skips it there too).
         if (animations && !reducedMotion) {
@@ -975,6 +979,19 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      * open it again. Nothing to do when the TV has no inputs to list (the pill is hidden then).
      * top_menu hides the pill, so the list hangs under the gear there, as in showInputs().
      */
+    /**
+     * The remote's 9-dot button sends KEYCODE_ALL_APPS, which Android turns into ACTION_ALL_APPS for the Home app:
+     * open the app library, the same as the top bar's 9-dot button.
+     */
+    private boolean openLibraryIfAsked(Intent intent) {
+        if (intent == null || !Intent.ACTION_ALL_APPS.equals(intent.getAction())) return false;
+        setIntent(new Intent(Intent.ACTION_MAIN));
+        if (!appLibraryEnabled) return true;
+        // As with Inputs: Android 9 wraps the new intent in a brief resume and pause that closes popups.
+        grid.post(this::onLibraryRequested);
+        return true;
+    }
+
     private boolean openInputsIfAsked(Intent intent) {
         if (intent == null || !ACTION_VIEW_INPUTS.equals(intent.getAction())) return false;
         setIntent(new Intent(Intent.ACTION_MAIN));
@@ -1022,6 +1039,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         super.onNewIntent(intent);
         if (openLauncherSettingsIfAsked(intent)) return;
         if (openInputsIfAsked(intent)) return;
+        if (openLibraryIfAsked(intent)) return;
         if (intent == null || !intent.hasCategory(Intent.CATEGORY_HOME)) return;
         if (gameDay != null && !stopped) gameDay.read();
         grid.scrollToPosition(0);
@@ -1074,6 +1092,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             introOnResume = false;
             BootIntro.showNow(this, root);
         }
+        // Started cold by the 9-dot button: the library opens once Home is laid out.
+        if (!cardHomeChecked) openLibraryIfAsked(getIntent());
         if (!cardHomeChecked) {
             BootIntro.maybeShow(this, root, getIntent() != null && getIntent().getBooleanExtra("show_intro", false));
             cardHomeChecked = true;

@@ -34,6 +34,12 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
     private final boolean singleRow;
     /** dock_band_all: in a single row, the band runs behind every app instead of the dock apps only. */
     private final boolean bandAll;
+    /**
+     * band_every_row: every row of apps under the dock gets the same band, full width even when the row is not
+     * full, so a row added later looks like the dock.
+     */
+    private boolean everyRow;
+    private final RectF rowRect = new RectF();
 
     /**
      * @param translucent the cinematic shelf's band: the artwork and the glow show through it.
@@ -61,6 +67,10 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
         edge.setColor(lightGlass ? 0x38FFFFFF : translucent ? 0x26FFFFFF : 0x1FFFFFFF);
     }
 
+    void setBandEveryRow(boolean on) {
+        everyRow = on && !singleRow;
+    }
+
     /** Concentric corners: the band's radius is the tiles' radius plus the band's padding around them. */
     static float radiusPx(float tileRadiusPx, float paddingPx) {
         return tileRadiusPx + paddingPx;
@@ -79,7 +89,7 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
     public void getItemOffsets(@NonNull Rect outRect, @NonNull View view, @NonNull RecyclerView parent,
                                @NonNull RecyclerView.State state) {
         int pos = parent.getChildAdapterPosition(view);
-        if (pos >= 0 && (singleRow || pos < dockSize)) {
+        if (pos >= 0 && (singleRow || pos < dockSize || everyRow)) {
             outRect.top = (int) (6 * density);
             outRect.bottom = (int) (12 * density);
         }
@@ -109,7 +119,43 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
                 rect.union(l, t, r, b);
             }
         }
+        if (everyRow) drawRows(c, parent);
         if (!any) return;
+        drawBand(c, parent, rect, cardWidth);
+    }
+
+    /** band_every_row: one full-width band per row below the dock, laid out like the dock's. */
+    private void drawRows(Canvas c, RecyclerView parent) {
+        if (dockSize <= 0) return;
+        int inner = parent.getWidth() - parent.getPaddingLeft() - parent.getPaddingRight();
+        float cell = inner / (float) dockSize;
+        java.util.Map<Integer, float[]> rows = new java.util.TreeMap<>();   // row -> {left, top, right, bottom, cardWidth}
+        for (int i = 0; i < parent.getChildCount(); i++) {
+            View child = parent.getChildAt(i);
+            int pos = parent.getChildAdapterPosition(child);
+            if (pos < dockSize) continue;
+            RecyclerView.ViewHolder vh = parent.getChildViewHolder(child);
+            if (!(vh instanceof AppAdapter.Holder)) continue;   // the library pill and other footers
+            View card = ((AppAdapter.Holder) vh).card;
+            int col = pos % dockSize;
+            float l = child.getLeft() + card.getLeft() - col * cell;
+            float t = child.getTop() + card.getTop() + child.getTranslationY();
+            float r = l + (dockSize - 1) * cell + card.getWidth();
+            float b = t + card.getHeight();
+            float[] row = rows.get(pos / dockSize);
+            if (row == null) rows.put(pos / dockSize, new float[]{l, t, r, b, card.getWidth()});
+            else {
+                row[1] = Math.min(row[1], t);
+                row[3] = Math.max(row[3], b);
+            }
+        }
+        for (float[] row : rows.values()) {
+            rowRect.set(row[0], row[1], row[2], row[3]);
+            drawBand(c, parent, rowRect, (int) row[4]);
+        }
+    }
+
+    private void drawBand(Canvas c, RecyclerView parent, RectF rect, int cardWidth) {
         float pad = 14 * density;
         // The band can only draw inside the grid, and the first and last dock tiles sit 12dp in from its
         // edges: a full 14dp at the sides sliced the rounded ends flat (#454). Keep the sides, with the
@@ -141,6 +187,7 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
         rect.bottom += namesRoom;
         if (lightGlass && (rect.top != shaderTop || rect.bottom != shaderBottom)) {
             // The pills' glass (pill_bg: white, 18% fading to 8%), a little fainter over this much larger area.
+            // Made per band: with band_every_row each row has its own top and bottom.
             band.setShader(new LinearGradient(0, rect.top, 0, rect.bottom, 0x24FFFFFF, 0x0DFFFFFF,
                     Shader.TileMode.CLAMP));
             shaderTop = rect.top;

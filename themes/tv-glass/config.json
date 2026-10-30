@@ -66,5 +66,6 @@
   "library_ok_opens": true,
   "tvos_focus": true,
   "boot_intro_title": "SONY",
-  "boot_intro_subtitle": "powered by Sudarshan"
+  "boot_intro_subtitle": "powered by Sudarshan",
+  "band_every_row": true
 }
