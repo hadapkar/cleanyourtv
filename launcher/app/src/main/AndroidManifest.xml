@@ -37,6 +37,7 @@
         <provider android:authorities="com.gathin.tvdiscover" />
         <package android:name="com.gathin.tvdiscover" />
         <package android:name="com.gathin.tvjarvis" />
+        <provider android:authorities="com.gathin.tvjarvis.status" />
         <!-- The standard settings handlers, so package visibility doesn't hide them and send the pills to a vendor fallback by mistake. -->
         <intent>
             <action android:name="android.settings.SETTINGS" />

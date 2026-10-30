@@ -506,7 +506,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         coocaaSources = cfg.coocaaSources;
 
         root = findViewById(R.id.root);
-        Sounds.init(this);
+        try {
+            Sounds.init(this);
+        } catch (RuntimeException e) {
+            android.util.Log.w("tvhome", "sounds off", e);
+        }
         switcherOn = CardHome.flag(this, "app_switcher");
         if (BootIntro.enabled(this)) {
             IntentFilter screen = new IntentFilter(Intent.ACTION_SCREEN_ON);
@@ -1058,7 +1062,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
             if (twice) {
                 if (switcher == null) switcher = new AppSwitcher(this, root);
-                grid.post(switcher::open);
+                grid.post(() -> {
+                    try {
+                        switcher.open();
+                    } catch (RuntimeException e) {
+                        android.util.Log.w("tvhome", "app switcher", e);
+                    }
+                });
                 return;
             }
         }
@@ -1116,12 +1126,22 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // Started cold by the 9-dot button: the library opens once Home is laid out.
         if (!cardHomeChecked) openLibraryIfAsked(getIntent());
         if (!cardHomeChecked) {
-            BootIntro.maybeShow(this, root, getIntent() != null && getIntent().getBooleanExtra("show_intro", false));
+            try {
+                BootIntro.maybeShow(this, root, getIntent() != null && getIntent().getBooleanExtra("show_intro", false));
+            } catch (RuntimeException e) {
+                android.util.Log.w("tvhome", "intro", e);
+            }
             cardHomeChecked = true;
             View main = grid;
             while (main.getParent() != root) main = (View) main.getParent();
             mainContent = main;
-            cardHome = CardHome.create(this, root, main);
+            try {
+                cardHome = CardHome.create(this, root, main);
+            } catch (RuntimeException | OutOfMemoryError e) {
+                // Card home is optional: without it Home is the plain dock and grid.
+                android.util.Log.w("tvhome", "card home off", e);
+                cardHome = null;
+            }
             if (cardHome != null) {
                 grid.addOnScrollListener(new RecyclerView.OnScrollListener() {
                     @Override
@@ -1134,9 +1154,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (cardHome != null) clockBlock.setVisibility(View.INVISIBLE);
         }
         if (cardHome != null) {
-            cardHome.setGreeting(greeting.getText());
-            cardHome.refresh();
-            if (leftHome && mainContent != null) cardHome.settleIn(mainContent);
+            try {
+                cardHome.setGreeting(greeting.getText());
+                cardHome.refresh();
+                if (leftHome && mainContent != null) cardHome.settleIn(mainContent);
+            } catch (RuntimeException e) {
+                android.util.Log.w("tvhome", "card home refresh", e);
+            }
         }
         leftHome = false;
         switch (tileRefresh.onResume(packagesChangedSinceRebuild())) {

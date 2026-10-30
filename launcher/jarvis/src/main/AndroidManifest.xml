@@ -35,6 +35,12 @@
             android:screenOrientation="landscape"
             android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
 
+        <!-- Read-only readiness for the launcher's Jarvis card (no key or content). -->
+        <provider
+            android:name=".StatusProvider"
+            android:authorities="com.gathin.tvjarvis.status"
+            android:exported="true" />
+
         <!-- The Gemini API key is set from the adb shell only (tools-tv/adbtv.js gemini-key): DUMP is held by the
              shell, never by an ordinary app, so no other app can read or change it. -->
         <receiver

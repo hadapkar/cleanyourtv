@@ -67,6 +67,14 @@ final class CardHome {
     private final LinearLayout recentRow;
     private final TextView recentHint;
     private final OrbView orb;
+    /** The cards and the area they share, kept so relayout() can move them when a service drops out. */
+    private LinearLayout leftCardView, forYouCard, swipeCard, recentCard, jarvisCard;
+    private View weatherDivider, weatherLine;
+    private int gTop, gBottom, gRightX, gRightW, gGap, gRowGap;
+    private String layoutKey = "";
+    private static final Uri JARVIS_STATUS = Uri.parse("content://com.gathin.tvjarvis.status/ready");
+    /** Weather older than this is not shown (the add-on cannot reach Open-Meteo). */
+    private static final long WEATHER_MAX_AGE_MS = 6 * 60 * 60 * 1000L;
     private final LinearLayout forYouRow;
     private final TextView forYouHint;
     private final TextView swipeCount;
@@ -314,6 +322,96 @@ final class CardHome {
         hint.setGravity(Gravity.CENTER_HORIZONTAL);
         jarvis.addView(hint, new LinearLayout.LayoutParams(-1, -2));
         makeFocusable(jarvis, this::openAssistant);
+        leftCardView = leftCard;
+        forYouCard = forYou;
+        swipeCard = swipe;
+        recentCard = recent;
+        jarvisCard = jarvis;
+        weatherDivider = divider;
+        weatherLine = weatherRow;
+        gTop = top;
+        gBottom = bottom;
+        gRightX = rightX;
+        gRightW = rightW;
+        gGap = gap;
+        gRowGap = rowGap;
+        // Until the first read says otherwise, the service-backed parts stay hidden: Home never flashes empty cards.
+        weatherDivider.setVisibility(View.GONE);
+        weatherLine.setVisibility(View.GONE);
+        relayout(false, false, false);
+    }
+
+    /**
+     * Places the right-hand cards for what can be shown: For you and Swipe (TV Discover has titles), Continue
+     * (anything to continue) and Jarvis (a working Gemini key). A missing part leaves no gap: rows and cards
+     * grow into its place, and with none of them the clock card stands alone.
+     */
+    private void relayout(boolean discover, boolean cont, boolean jarvisOk) {
+        String key = discover + "," + cont + "," + jarvisOk;
+        if (key.equals(layoutKey)) return;
+        layoutKey = key;
+        boolean topRow = discover, bottomRow = cont || jarvisOk;
+        int rows = (topRow ? 1 : 0) + (bottomRow ? 1 : 0);
+        int full = gBottom - gTop;
+        int topH = rows == 2 ? (int) ((full - gRowGap) * 0.56f) : full;
+        int wideW = (int) ((gRightW - gGap) * 0.70f), smallW = gRightW - gGap - wideW;
+        int y = gTop;
+        show(forYouCard, topRow);
+        show(swipeCard, topRow);
+        if (topRow) {
+            place(forYouCard, gRightX, y, wideW, topH);
+            place(swipeCard, gRightX + wideW + gGap, y, smallW, topH);
+            posterH = topH - px(16 + 14) - px(24);
+            posterW = posterH * 2 / 3;
+            posterSlots = Math.max(1, Math.min(5, (wideW - px(48) + px(10)) / (posterW + px(10))));
+            y += topH + gRowGap;
+        }
+        int bottomH = rows == 2 ? gBottom - y : full;
+        show(recentCard, cont);
+        show(jarvisCard, jarvisOk);
+        int recentW = 0;
+        if (cont && jarvisOk) {
+            recentW = wideW;
+            place(recentCard, gRightX, y, wideW, bottomH);
+            place(jarvisCard, gRightX + wideW + gGap, y, smallW, bottomH);
+        } else if (cont) {
+            recentW = gRightW;
+            place(recentCard, gRightX, y, gRightW, bottomH);
+        } else if (jarvisOk) {
+            place(jarvisCard, gRightX, y, gRightW, bottomH);
+        }
+        if (recentW > 0) {
+            int inner = recentW - px(48);
+            recentSlots = inner >= px(4 * 96 + 3 * 10) ? 4 : 3;
+            recentItemW = (inner - (recentSlots - 1) * px(10)) / recentSlots;
+            recentImgH = Math.min(recentItemW * 9 / 16, bottomH - px(14 + 10) - px(24) - px(22));
+        }
+        // The frosted backdrops follow their cards to their new places.
+        container.removeCallbacks(frostTask);
+        container.postDelayed(frostTask, 400);
+    }
+
+    private static void show(View v, boolean on) {
+        v.setVisibility(on ? View.VISIBLE : View.GONE);
+    }
+
+    private static void place(View v, int x, int y, int w, int h) {
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) v.getLayoutParams();
+        if (lp.leftMargin == x && lp.topMargin == y && lp.width == w && lp.height == h) return;
+        lp.leftMargin = x;
+        lp.topMargin = y;
+        lp.width = w;
+        lp.height = h;
+        v.setLayoutParams(lp);
+    }
+
+    /** Jarvis can answer: installed, a key set, and the key not refused by Gemini. */
+    private boolean jarvisReady() {
+        try (Cursor c = activity.getContentResolver().query(JARVIS_STATUS, null, null, null, null)) {
+            return c != null && c.moveToFirst() && c.getInt(0) == 1;
+        } catch (RuntimeException e) {
+            return false;   // not installed, or an older Jarvis without the status provider
+        }
     }
 
     /**
@@ -340,7 +438,13 @@ final class CardHome {
         container.removeCallbacks(frostTask);
         container.postDelayed(frostTask, 1200);
         container.postDelayed(frostTask, 6000);
-        new Thread(this::readDiscover, "card-discover").start();
+        new Thread(() -> {
+            try {
+                readDiscover();
+            } catch (RuntimeException | OutOfMemoryError e) {
+                android.util.Log.w("tvhome", "cards", e);   // the cards keep what they showed
+            }
+        }, "card-discover").start();
         long now = System.currentTimeMillis();
         if (now - lastRefresh < REFRESH_GAP_MS) return;
         lastRefresh = now;
@@ -367,16 +471,22 @@ final class CardHome {
         String text = "";
         try (Cursor c = activity.getContentResolver().query(WEATHER, null, null, null, null)) {
             if (c != null && c.moveToFirst()) {
-                temp = String.format(Locale.getDefault(), "%.0f°", c.getFloat(c.getColumnIndexOrThrow("temp_c")));
-                text = c.getString(c.getColumnIndexOrThrow("text")) + " · " + c.getString(c.getColumnIndexOrThrow("city"));
+                long updated = c.getLong(c.getColumnIndexOrThrow("updated"));
+                if (System.currentTimeMillis() - updated < WEATHER_MAX_AGE_MS) {
+                    temp = String.format(Locale.getDefault(), "%.0f\u00b0", c.getFloat(c.getColumnIndexOrThrow("temp_c")));
+                    text = c.getString(c.getColumnIndexOrThrow("text")) + " \u00b7 " + c.getString(c.getColumnIndexOrThrow("city"));
+                }
             }
         } catch (RuntimeException ignored) {
-            // No weather add-on, or it is not answering: leave the line empty.
+            // No weather add-on, or it is not answering: the line stays hidden.
         }
         final String t = temp, x = text;
         activity.runOnUiThread(() -> {
+            boolean on = !t.isEmpty();
             weatherTemp.setText(t);
             weatherText.setText(x);
+            weatherDivider.setVisibility(on ? View.VISIBLE : View.GONE);
+            weatherLine.setVisibility(on ? View.VISIBLE : View.GONE);
         });
     }
 
@@ -471,8 +581,13 @@ final class CardHome {
         java.util.List<Recent> recent = mergeRecent(rows);
         for (Recent r : recent) if (r.intent != null) r.poster = decodePoster(r.posterUri);
         final int count = queued;
+        boolean anyPoster = false;
+        for (android.graphics.Bitmap b : art) anyPoster |= b != null;
+        final boolean discoverOk = installed && anyPoster;
+        final boolean jarvisOk = jarvisReady();
         activity.runOnUiThread(() -> {
-            showDiscover(installed, picks, art, stackArt, count);
+            relayout(discoverOk, !recent.isEmpty(), jarvisOk);
+            if (discoverOk) showDiscover(installed, picks, art, stackArt, count);
             showContinue(recent);
         });
     }
@@ -711,15 +826,14 @@ final class CardHome {
 
     /** A card's background: the blurred screen behind it, clipped to the card's corners, under its tint and rim. */
     private final class Frost extends Drawable {
-        private final int x, y;
+        private final View owner;
         private final GradientDrawable glass;
         private final android.graphics.Path clip = new android.graphics.Path();
         private final Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG);
         private final android.graphics.Rect src = new android.graphics.Rect();
 
-        Frost(int x, int y, GradientDrawable glass) {
-            this.x = x;
-            this.y = y;
+        Frost(View owner, GradientDrawable glass) {
+            this.owner = owner;
             this.glass = glass;
         }
 
@@ -735,6 +849,7 @@ final class CardHome {
             android.graphics.Bitmap f = frost;
             if (f != null) {
                 android.graphics.Rect b = getBounds();
+                int x = owner.getLeft(), y = owner.getTop();
                 src.set(x / FROST, y / FROST, (x + b.width()) / FROST, (y + b.height()) / FROST);
                 canvas.save();
                 canvas.clipPath(clip);
@@ -893,7 +1008,7 @@ final class CardHome {
                 new int[]{0x3DFFFFFF, 0x12FFFFFF});
         fill.setCornerRadius(px(14));
         fill.setStroke(Math.max(1, px(1)), 0x59FFFFFF);
-        c.setBackground(new Frost(x, y, fill));
+        c.setBackground(new Frost(c, fill));
         c.setOutlineProvider(new ViewOutlineProvider() {
             @Override
             public void getOutline(View view, Outline outline) {

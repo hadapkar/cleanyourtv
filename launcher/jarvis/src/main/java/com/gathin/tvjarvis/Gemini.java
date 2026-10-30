@@ -61,7 +61,8 @@ final class Gemini {
     }
 
     static void setKey(Context ctx, String key, String model) {
-        SharedPreferences.Editor e = prefs(ctx).edit().putString("key", key.trim());
+        // A new key starts trusted again.
+        SharedPreferences.Editor e = prefs(ctx).edit().putString("key", key.trim()).putBoolean("refused", false);
         if (model != null && !model.trim().isEmpty()) e.putString("model", model.trim());
         e.apply();
     }
@@ -109,10 +110,14 @@ final class Gemini {
                         last = new Busy("Gemini is busy (" + status + ")");
                         continue;
                     }
+                    // A refused key (401/403) or a model that no longer exists (404) will not fix itself: the
+                    // launcher hides the Jarvis card until a new key is set.
+                    if (status == 401 || status == 403 || status == 404) prefs(ctx).edit().putBoolean("refused", true).apply();
                     throw new Refused("Gemini said: " + (msg.isEmpty() ? "error " + status : msg));
                 }
                 String reply = new JSONObject(text).getJSONArray("candidates").getJSONObject(0)
                         .getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text");
+                prefs(ctx).edit().putBoolean("refused", false).apply();
                 return new JSONObject(stripFence(reply));
             } catch (Refused e) {
                 throw e;
