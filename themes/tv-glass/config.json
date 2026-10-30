@@ -64,5 +64,7 @@
   "home_idle_clock_minutes": 10,
   "tile_menu": true,
   "library_ok_opens": true,
-  "tvos_focus": true
+  "tvos_focus": true,
+  "boot_intro_title": "SONY",
+  "boot_intro_subtitle": "powered by Sudarshan"
 }

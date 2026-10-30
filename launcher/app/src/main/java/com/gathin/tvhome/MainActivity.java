@@ -1042,6 +1042,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (grid.getAdapter() == null) grid.setAdapter(adapter);   // dropped by onTrimMemory
         hideOpening();
         if (!cardHomeChecked) {
+            BootIntro.maybeShow(this, root, getIntent() != null && getIntent().getBooleanExtra("show_intro", false));
             cardHomeChecked = true;
             View main = grid;
             while (main.getParent() != root) main = (View) main.getParent();

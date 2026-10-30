@@ -90,6 +90,18 @@ final class CardHome {
         return flag(ctx, "card_home");
     }
 
+    /** A string from the pushed theme's config.json that Config does not know (boot_intro_title, ...), or "". */
+    static String string(Context ctx, String key) {
+        try {
+            File file = new File(Config.dir(ctx), Config.FILE_NAME);
+            if (!file.isFile()) return "";
+            String json = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+            return new JSONObject(json).optString(key, "");
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
     /** A boolean from the pushed theme's config.json that Config does not know (card_home, tvos_focus). */
     static boolean flag(Context ctx, String key) {
         try {
