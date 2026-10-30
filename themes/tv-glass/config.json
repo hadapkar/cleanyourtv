@@ -9,6 +9,7 @@
     "app.cricfy.tv"
   ],
   "background_color": "#090C14",
+  "plain_glass": true,
   "wallpaper": true,
   "wallpaper_moods": {
     "morning": [
