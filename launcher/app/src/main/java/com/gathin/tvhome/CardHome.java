@@ -464,28 +464,25 @@ final class CardHome {
      * sliding over them; they come back as the grid scrolls home.
      */
     void onGridScrolled(int offset) {
-        // The grid jumps a whole row at once (scrollToPosition), so the cards animate to where the scroll puts them
-        // instead of following it frame by frame: they glide up and fade out together, and come back the same way.
-        // A few pixels of offset come from item decorations and layout settling, not from the owner moving down:
-        // only a real move into the rows below (past 40 dp) slides the cards away.
+        // As on Apple TV: moving into the rows below, the cards go up with the page and fade into the background,
+        // dim and a little smaller, still there behind the rows; back on the dock they come forward again. The
+        // grid jumps a row at a time, so this animates to where the scroll puts them.
         boolean away = offset > px(40);
-        // As on Apple TV, the cards move up with the page (so the rows never slide over them) and fade into the
-        // background as the rows come up.
         float y = away ? -offset : 0f;
-        // Compare with what is on screen, not only the last request, so cards hidden by an interrupted fade (or by
-        // settleIn racing a scroll) always come back.
-        boolean settled = container.getTranslationY() == y && container.getAlpha() == (away ? 0f : 1f)
-                && container.getVisibility() == (away ? View.INVISIBLE : View.VISIBLE);
+        float alpha = away ? 0.22f : 1f, scale = away ? 0.96f : 1f;
+        boolean settled = container.getTranslationY() == y && container.getAlpha() == alpha
+                && container.getScaleX() == scale && container.getVisibility() == View.VISIBLE;
         if (shelfAway == away && settled) return;
         shelfAway = away;
         container.animate().cancel();
-        if (!away) container.setVisibility(View.VISIBLE);
-        container.animate().alpha(away ? 0f : 1f).translationY(y).setDuration(away ? 420 : 360)
-                .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f))
-                .withEndAction(() -> {
-                    // Faded out: the cards must not take focus or clicks under the app rows.
-                    if (shelfAway) container.setVisibility(View.INVISIBLE);
-                }).start();
+        container.setVisibility(View.VISIBLE);
+        container.setPivotX(container.getWidth() / 2f);
+        container.setPivotY(0f);
+        // Dimmed behind the rows they must not take focus or clicks.
+        container.setDescendantFocusability(away ? android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS
+                : android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS);
+        container.animate().alpha(alpha).translationY(y).scaleX(scale).scaleY(scale).setDuration(away ? 420 : 360)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).start();
     }
 
     /** The cards are slid away for the app rows (onGridScrolled). */
