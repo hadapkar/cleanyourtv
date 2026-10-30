@@ -284,9 +284,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private boolean settingsKeyPanel;
     /** Calmer motion for weak GPUs (config.xml, reduced_motion): stiff spring, short fades, no replay. */
     private boolean reducedMotion;
-    private final Runnable weeklyClean = () -> {
-        if (resumed) MemoryCleaner.cleanAsync(this, true);
-    };
     /** config.xml dock_row: the first row is a separate dock (band, parked low, top shelf) rather than plain grid. */
     private boolean dockRow;
     /** config single_row: every app in the dock's row, scrolling sideways, no grid below. */
@@ -344,6 +341,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      * reach Home after onPause, when that key opened another app, and must not start the clock over the app.
      */
     private boolean resumed;
+    /** The weekly memory clean, posted once Home has stayed on screen a minute (onResume). */
+    private final Runnable weeklyClean = () -> {
+        if (resumed) MemoryCleaner.cleanAsync(this, true);
+    };
     /** Rebuild the tiles on the way back to Home only when apps changed meanwhile (TileRefresh). */
     private final TileRefresh tileRefresh = new TileRefresh();
     /** PackageManager's change counter at the last rebuild, to catch a package broadcast that never arrived. */
