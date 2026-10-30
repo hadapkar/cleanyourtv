@@ -468,8 +468,15 @@ final class CardHome {
         // dim and a little smaller, still there behind the rows; back on the dock they come forward again. The
         // grid jumps a row at a time, so this animates to where the scroll puts them.
         boolean away = offset > px(40);
+        // How many rows down: measured from the first real scroll (one row of tiles), so it follows whatever
+        // tile size and however many rows the owner ends up with. One row down the cards sit dim behind the rows;
+        // each row further they fade more, until they have gone up off the screen.
+        if (away && rowStep <= 0) rowStep = offset;
+        float rows = away && rowStep > 0 ? offset / (float) rowStep : 0f;
         float y = away ? -offset : 0f;
-        float alpha = away ? 0.22f : 1f, scale = away ? 0.96f : 1f;
+        float alpha = !away ? 1f : rows <= 1.05f ? 0.22f : Math.max(0f, 0.22f * (float) Math.pow(0.35, rows - 1));
+        if (alpha < 0.03f) alpha = 0f;
+        float scale = !away ? 1f : 0.96f - 0.02f * Math.min(2f, Math.max(0f, rows - 1));
         boolean settled = container.getTranslationY() == y && container.getAlpha() == alpha
                 && container.getScaleX() == scale && container.getVisibility() == View.VISIBLE;
         if (shelfAway == away && settled) return;
@@ -484,6 +491,9 @@ final class CardHome {
         container.animate().alpha(alpha).translationY(y).scaleX(scale).scaleY(scale).setDuration(away ? 420 : 360)
                 .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).start();
     }
+
+    /** One row of scroll in px, learnt from the first move into the rows (onGridScrolled). */
+    private int rowStep;
 
     /** The cards are slid away for the app rows (onGridScrolled). */
     private boolean shelfAway;
