@@ -1041,8 +1041,11 @@ final class CardHome {
                 sheen.setFocused(focused, true);
                 if (focused) Sounds.tick();
                 if (parallax) parallax(view, focused);
+                // A shadow only under solid artwork: under see-through glass (the cards, a Continue item with its
+                // name) Android draws it inside the glass too, which showed as a second, lighter box on the TV.
+                float lift = view instanceof ImageView ? px(18) : 0f;
                 view.animate().scaleX(focused ? 1.06f : 1f).scaleY(focused ? 1.06f : 1f)
-                        .translationZ(focused ? px(18) : 0f).setDuration(focused ? 320 : 200)
+                        .translationZ(focused ? lift : 0f).setDuration(focused ? 320 : 200)
                         .setInterpolator(focused ? new android.view.animation.OvershootInterpolator(0.9f)
                                 : new android.view.animation.DecelerateInterpolator(1.6f)).start();
             });
