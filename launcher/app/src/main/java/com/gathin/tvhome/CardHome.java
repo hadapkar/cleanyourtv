@@ -262,7 +262,6 @@ final class CardHome {
 
     /** Called on every return to Home: rebuilds the recent row and, at most every few minutes, the weather. */
     void refresh() {
-        buildRecent();
         container.removeCallbacks(frostTask);
         container.postDelayed(frostTask, 1200);
         container.postDelayed(frostTask, 6000);
@@ -306,32 +305,6 @@ final class CardHome {
         });
     }
 
-    private void buildRecent() {
-        recentRow.removeAllViews();
-        PackageManager pm = activity.getPackageManager();
-        int shown = 0;
-        for (String pkg : LastOpened.recent(activity, 12)) {
-            if (shown == recentSlots) break;
-            Intent launch = pm.getLeanbackLaunchIntentForPackage(pkg);
-            if (launch == null) launch = pm.getLaunchIntentForPackage(pkg);
-            if (launch == null) continue;
-            Drawable art = null;
-            CharSequence label = pkg;
-            try {
-                art = pm.getActivityBanner(launch);
-                if (art == null) art = pm.getApplicationBanner(pkg);
-                if (art == null) art = pm.getApplicationIcon(pkg);
-                label = pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0));
-            } catch (PackageManager.NameNotFoundException | RuntimeException e) {
-                continue;
-            }
-            recentRow.addView(recentItem(pkg, label, art, launch), shown == 0 ? first() : next());
-            shown++;
-        }
-        recentHint.setVisibility(shown == 0 ? View.VISIBLE : View.GONE);
-        recentRow.setVisibility(shown == 0 ? View.GONE : View.VISIBLE);
-    }
-
     private LinearLayout.LayoutParams first() {
         return new LinearLayout.LayoutParams(recentItemW, -2);
     }
@@ -367,7 +340,7 @@ final class CardHome {
         item.addView(name, nameLp);
         makeFocusable(item, () -> {
             LastOpened.record(activity, pkg);
-            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
             activity.startActivity(launch);
             opening(pkg);
         });
@@ -380,14 +353,19 @@ final class CardHome {
         java.util.List<String[]> picks = new java.util.ArrayList<>();   // {title, pkg, poster uri}
         java.util.List<String> queuePosters = new java.util.ArrayList<>();
         int queued = 0;
-        java.util.List<String[]> resume = new java.util.ArrayList<>();   // {title, pkg, intent, progress, poster}
+        java.util.List<Recent> rows = new java.util.ArrayList<>();
         if (installed) {
             try (Cursor c = activity.getContentResolver().query(CONTINUE, null, null, null, null)) {
-                while (c != null && c.moveToNext() && resume.size() < 4) {
-                    resume.add(new String[]{c.getString(c.getColumnIndexOrThrow("title")),
-                            c.getString(c.getColumnIndexOrThrow("pkg")), c.getString(c.getColumnIndexOrThrow("intent")),
-                            String.valueOf(c.getInt(c.getColumnIndexOrThrow("progress"))),
-                            c.getString(c.getColumnIndexOrThrow("poster"))});
+                while (c != null && c.moveToNext()) {
+                    Recent r = new Recent();
+                    r.title = c.getString(c.getColumnIndexOrThrow("title"));
+                    r.pkg = c.getString(c.getColumnIndexOrThrow("pkg"));
+                    r.intent = c.getString(c.getColumnIndexOrThrow("intent"));
+                    r.progress = c.getInt(c.getColumnIndexOrThrow("progress"));
+                    r.posterUri = c.getString(c.getColumnIndexOrThrow("poster"));
+                    int e = c.getColumnIndex("engaged");
+                    r.when = e < 0 ? 0L : c.getLong(e);
+                    rows.add(r);
                 }
             } catch (RuntimeException ignored) {
                 // No Continue watching yet (permission not granted, or nothing published).
@@ -415,12 +393,12 @@ final class CardHome {
         for (int i = 0; i < art.length; i++) art[i] = decodePoster(picks.get(i)[2]);
         android.graphics.Bitmap[] stackArt = new android.graphics.Bitmap[queuePosters.size()];
         for (int i = 0; i < stackArt.length; i++) stackArt[i] = decodePoster(queuePosters.get(i));
-        android.graphics.Bitmap[] resumeArt = new android.graphics.Bitmap[resume.size()];
-        for (int i = 0; i < resumeArt.length; i++) resumeArt[i] = decodePoster(resume.get(i)[4]);
+        java.util.List<Recent> recent = mergeRecent(rows);
+        for (Recent r : recent) if (r.intent != null) r.poster = decodePoster(r.posterUri);
         final int count = queued;
         activity.runOnUiThread(() -> {
             showDiscover(installed, picks, art, stackArt, count);
-            showContinue(resume, resumeArt);
+            showContinue(recent);
         });
     }
 
@@ -451,46 +429,118 @@ final class CardHome {
         swipeCount.setText(!installed ? "Not installed" : queued > 0 ? queued + " to rate" : "OK to start");
     }
 
-    /** Continue watching takes the bottom-left card when there is any; otherwise it keeps Recently opened. */
-    private void showContinue(java.util.List<String[]> rows, android.graphics.Bitmap[] art) {
-        if (rows.isEmpty()) {
-            recentTitle.setText("Recently opened");
-            return;
-        }
-        recentTitle.setText("Continue watching");
-        recentRow.removeAllViews();
-        for (int i = 0; i < rows.size(); i++) {
-            String[] r = rows.get(i);
-            LinearLayout item = new LinearLayout(activity);
-            item.setOrientation(LinearLayout.VERTICAL);
-            item.setPadding(px(4), px(4), px(4), px(4));
-            FrameLayout frame = new FrameLayout(activity);
-            ImageView image = posterView();
-            if (art[i] != null) image.setImageBitmap(art[i]);
-            frame.addView(image, new FrameLayout.LayoutParams(-1, -1));
-            int progress = Math.max(0, Math.min(100, Integer.parseInt(r[3])));
-            if (progress > 0) {
-                View bar = new View(activity);
-                bar.setBackgroundColor(0xFFE50914);
-                FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams((recentItemW - px(8)) * progress / 100, px(3),
-                        Gravity.BOTTOM | Gravity.START);
-                frame.addView(bar, blp);
+    /** One item of the Continue card: a Watch Next row (intent set) or an app used lately (launch set). */
+    private static final class Recent {
+        String title, pkg, intent, posterUri;
+        int progress;
+        long when;
+        android.graphics.Bitmap poster;
+        Drawable art;
+        Intent launch;
+    }
+
+    /** Packages that are part of this TV setup rather than something the owner watches. */
+    private static final java.util.Set<String> NOT_RECENT = new java.util.HashSet<>(java.util.Arrays.asList(
+            "com.gathin.tvhome", "com.gathin.tvdiscover", "com.gathin.tvjarvis", "com.gathin.tvweather",
+            "com.android.tv.settings", "com.google.android.tvlauncher", "com.klevico.monet", "com.mitv.tvhome.atv",
+            "com.google.android.katniss", "com.wolf.google.lm", "com.android.vending", "android"));
+
+    /**
+     * Every app used lately, however it was opened (Android's usage stats, which need usage access granted from
+     * the shell; without it, the apps Home opened), merged with the Watch Next rows apps publish. One item per app:
+     * its row when it has one, so it resumes that title. Newest first.
+     */
+    private java.util.List<Recent> mergeRecent(java.util.List<Recent> rows) {
+        java.util.Map<String, Long> last = new java.util.HashMap<>();
+        long now = System.currentTimeMillis();
+        try {
+            android.app.usage.UsageStatsManager usm = activity.getSystemService(android.app.usage.UsageStatsManager.class);
+            java.util.List<android.app.usage.UsageStats> stats = usm == null ? null
+                    : usm.queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_BEST, now - 14L * 24 * 3600 * 1000, now);
+            if (stats != null) for (android.app.usage.UsageStats u : stats) {
+                if (u.getLastTimeUsed() <= 0 || u.getTotalTimeInForeground() <= 0) continue;
+                last.merge(u.getPackageName(), u.getLastTimeUsed(), Long::max);
             }
-            item.addView(frame, new LinearLayout.LayoutParams(-1, recentImgH));
-            TextView name = text(12, 0xCCFFFFFF, "sans-serif", 0.02f);
-            name.setSingleLine(true);
-            name.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            name.setText(r[0]);
-            name.setGravity(Gravity.CENTER_HORIZONTAL);
-            LinearLayout.LayoutParams nameLp = new LinearLayout.LayoutParams(-1, -2);
-            nameLp.topMargin = px(4);
-            item.addView(name, nameLp);
-            makeFocusable(item, () -> openIntent(r[2], r[1]));
-            if (i == recentSlots) break;
+        } catch (RuntimeException ignored) {
+            // No usage access: fall back below.
+        }
+        if (last.isEmpty()) for (String pkg : LastOpened.recent(activity, 12)) last.put(pkg, LastOpened.get(activity, pkg));
+
+        java.util.Map<String, Recent> byPkg = new java.util.LinkedHashMap<>();
+        for (Recent r : rows) {   // newest row per app (rows come newest first)
+            if (!byPkg.containsKey(r.pkg)) byPkg.put(r.pkg, r);
+        }
+        PackageManager pm = activity.getPackageManager();
+        for (java.util.Map.Entry<String, Long> e : last.entrySet()) {
+            String pkg = e.getKey();
+            if (NOT_RECENT.contains(pkg)) continue;
+            Recent row = byPkg.get(pkg);
+            if (row != null) {
+                row.when = Math.max(row.when, e.getValue());
+                continue;
+            }
+            Intent launch = pm.getLeanbackLaunchIntentForPackage(pkg);
+            if (launch == null) continue;   // not a TV app (services, system parts)
+            Recent r = new Recent();
+            r.pkg = pkg;
+            r.when = e.getValue();
+            r.launch = launch;
+            try {
+                r.title = pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString();
+                r.art = pm.getActivityBanner(launch);
+                if (r.art == null) r.art = pm.getApplicationBanner(pkg);
+                if (r.art == null) r.art = pm.getApplicationIcon(pkg);
+            } catch (PackageManager.NameNotFoundException | RuntimeException ex) {
+                continue;
+            }
+            byPkg.put(pkg, r);
+        }
+        java.util.List<Recent> out = new java.util.ArrayList<>(byPkg.values());
+        out.sort((a, b) -> Long.compare(b.when, a.when));
+        return out.size() > recentSlots ? new java.util.ArrayList<>(out.subList(0, recentSlots)) : out;
+    }
+
+    /** The bottom-left card: what was watched last, left to right; a row resumes its title, an app comes back. */
+    private void showContinue(java.util.List<Recent> items) {
+        recentTitle.setText("Continue");
+        recentRow.removeAllViews();
+        for (int i = 0; i < items.size(); i++) {
+            Recent r = items.get(i);
+            View item;
+            if (r.intent != null) {
+                LinearLayout v = new LinearLayout(activity);
+                v.setOrientation(LinearLayout.VERTICAL);
+                v.setPadding(px(4), px(4), px(4), px(4));
+                FrameLayout frame = new FrameLayout(activity);
+                ImageView image = posterView();
+                if (r.poster != null) image.setImageBitmap(r.poster);
+                frame.addView(image, new FrameLayout.LayoutParams(-1, -1));
+                int progress = Math.max(0, Math.min(100, r.progress));
+                if (progress > 0) {
+                    View bar = new View(activity);
+                    bar.setBackgroundColor(0xFFE50914);
+                    frame.addView(bar, new FrameLayout.LayoutParams((recentItemW - px(8)) * progress / 100, px(3),
+                            Gravity.BOTTOM | Gravity.START));
+                }
+                v.addView(frame, new LinearLayout.LayoutParams(-1, recentImgH));
+                TextView name = text(12, 0xCCFFFFFF, "sans-serif", 0.02f);
+                name.setSingleLine(true);
+                name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                name.setText(r.title);
+                name.setGravity(Gravity.CENTER_HORIZONTAL);
+                LinearLayout.LayoutParams nameLp = new LinearLayout.LayoutParams(-1, -2);
+                nameLp.topMargin = px(4);
+                v.addView(name, nameLp);
+                makeFocusable(v, () -> openIntent(r.intent, r.pkg));
+                item = v;
+            } else {
+                item = recentItem(r.pkg, r.title, r.art, r.launch);
+            }
             recentRow.addView(item, i == 0 ? first() : next());
         }
-        recentHint.setVisibility(View.GONE);
-        recentRow.setVisibility(View.VISIBLE);
+        recentHint.setText("Apps you watch show up here");
+        recentHint.setVisibility(items.isEmpty() ? View.VISIBLE : View.GONE);
+        recentRow.setVisibility(items.isEmpty() ? View.GONE : View.VISIBLE);
     }
 
     /** A Watch Next row's own intent, only if it really opens the app that published it. */

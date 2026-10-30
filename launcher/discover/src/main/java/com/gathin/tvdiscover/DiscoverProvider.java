@@ -26,7 +26,7 @@ import java.util.List;
  */
 public class DiscoverProvider extends ContentProvider {
     private static final String[] COLUMNS = {"key", "title", "year", "genres", "service", "pkg", "poster"};
-    private static final String[] CONTINUE = {"key", "title", "subtitle", "pkg", "intent", "progress", "poster"};
+    private static final String[] CONTINUE = {"key", "title", "subtitle", "pkg", "intent", "progress", "poster", "engaged"};
     private volatile boolean refreshing;
 
     @Override
@@ -42,7 +42,8 @@ public class DiscoverProvider extends ContentProvider {
             for (JSONObject t : WatchNext.read(getContext(), 6)) {
                 String key = t.optString("key");
                 c.addRow(new Object[]{key, t.optString("title"), t.optString("subtitle"), t.optString("pkg"),
-                        t.optString("intent"), t.optInt("progress"), "content://com.gathin.tvdiscover/poster/" + key});
+                        t.optString("intent"), t.optInt("progress"), "content://com.gathin.tvdiscover/poster/" + key,
+                        t.optLong("engaged")});
             }
             return c;
         }
