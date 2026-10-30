@@ -482,6 +482,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         sky = findViewById(R.id.sky);
         sky.setIntensity(cfg.skyIntensity);
         glass = findViewById(R.id.glass);
+        // tvos_focus: the focused tile carries its own light and shadow (Sheen), so the floating slab never shows.
+        if (CardHome.flag(this, "tvos_focus")) glass.setVisibility(View.GONE);
         glass.setStyle(cfg.glassStyle);
         if (festive) glass.setAccent(festival.accentColor());
         ambient = findViewById(R.id.ambient);

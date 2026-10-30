@@ -3,6 +3,7 @@ package com.gathin.tvhome;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.net.Uri;
@@ -20,6 +21,16 @@ final class SystemSettings {
         ResolveInfo resolved = pm.resolveActivity(standard, PackageManager.MATCH_DEFAULT_ONLY);
         // Fire OS resolves the standard actions to a CTS compliance stub that opens nothing;
         // treat it as missing so the vendor fallback runs.
+        // Another app claiming the action too (a sideloaded "Launcher Manager" on a Xiaomi MiTV-AESP0) turns the
+        // answer into Android's chooser; open the system's own settings app instead of asking every time.
+        if (resolved != null && "android".equals(resolved.activityInfo.packageName)
+                && resolved.activityInfo.name.endsWith("ResolverActivity")) {
+            for (ResolveInfo r : pm.queryIntentActivities(standard, PackageManager.MATCH_DEFAULT_ONLY)) {
+                if ((r.activityInfo.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0) {
+                    return new Intent(action).setClassName(r.activityInfo.packageName, r.activityInfo.name);
+                }
+            }
+        }
         if (resolved != null && !resolved.activityInfo.name.contains("CTSDummy")) return standard;
         Intent vendor = vendorIntent(context);
         if (vendor != null) return vendor;

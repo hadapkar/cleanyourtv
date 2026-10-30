@@ -56,6 +56,7 @@ final class CardHome {
     private static final long REFRESH_GAP_MS = 5 * 60 * 1000L;
 
     private final Activity activity;
+    private final boolean tvos;
     private final float d;
     private final FrameLayout container;
     private final TextView greeting;
@@ -82,11 +83,16 @@ final class CardHome {
 
     /** Whether the pushed theme's config.json turns card home on. */
     static boolean enabled(Context ctx) {
+        return flag(ctx, "card_home");
+    }
+
+    /** A boolean from the pushed theme's config.json that Config does not know (card_home, tvos_focus). */
+    static boolean flag(Context ctx, String key) {
         try {
             File file = new File(Config.dir(ctx), Config.FILE_NAME);
             if (!file.isFile()) return false;
             String json = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
-            return new JSONObject(json).optBoolean("card_home", false);
+            return new JSONObject(json).optBoolean(key, false);
         } catch (Exception e) {
             return false;
         }
@@ -94,6 +100,7 @@ final class CardHome {
 
     private CardHome(Activity activity, FrameLayout root, View above) {
         this.activity = activity;
+        tvos = flag(activity, "tvos_focus");
         DisplayMetrics m = activity.getResources().getDisplayMetrics();
         d = m.density;
         int w = m.widthPixels, h = m.heightPixels;
@@ -685,11 +692,26 @@ final class CardHome {
         Toast.makeText(activity, "No assistant found on this TV", Toast.LENGTH_SHORT).show();
     }
 
-    /** Focusable with a soft lift and a brighter rim, so the remote can land on it like on a tile. */
+    /**
+     * Focusable so the remote can land on it like on a tile. With tvos_focus it lifts with a shadow and a sheen,
+     * as Apple TV does; otherwise it grows a little and shows a bright rim.
+     */
     private void makeFocusable(View v, Runnable onOk) {
         v.setFocusable(true);
         v.setClickable(true);
         v.setOnClickListener(x -> onOk.run());
+        if (tvos) {
+            Sheen sheen = new Sheen();
+            v.setForeground(sheen);
+            v.setClipToOutline(true);
+            v.setOnFocusChangeListener((view, focused) -> {
+                sheen.setFocused(focused, true);
+                view.animate().scaleX(focused ? 1.06f : 1f).scaleY(focused ? 1.06f : 1f)
+                        .translationZ(focused ? px(18) : 0f).setDuration(focused ? 240 : 180)
+                        .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).start();
+            });
+            return;
+        }
         v.setOnFocusChangeListener((view, focused) ->
                 view.animate().scaleX(focused ? 1.04f : 1f).scaleY(focused ? 1.04f : 1f).setDuration(140).start());
         v.setForeground(focusRing());
@@ -713,6 +735,12 @@ final class CardHome {
         fill.setCornerRadius(px(14));
         fill.setStroke(Math.max(1, px(1)), 0x59FFFFFF);
         c.setBackground(new Frost(x, y, fill));
+        c.setOutlineProvider(new ViewOutlineProvider() {
+            @Override
+            public void getOutline(View view, Outline outline) {
+                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), px(14));
+            }
+        });
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(w, h);
         lp.leftMargin = x;
         lp.topMargin = y;

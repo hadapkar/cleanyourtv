@@ -68,5 +68,6 @@
     "219:com.gathin.tvjarvis/.JarvisActivity"
   ],
   "tile_menu": true,
-  "library_ok_opens": true
+  "library_ok_opens": true,
+  "tvos_focus": true
 }

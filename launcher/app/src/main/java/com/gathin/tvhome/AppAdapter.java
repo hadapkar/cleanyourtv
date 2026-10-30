@@ -197,6 +197,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
      * Xiaomi, and a second or held OK meanwhile used to open App info. Cleared when Home resumes.
      */
     private long launchingUntil;
+    /** tvos_focus: see Sheen. Static so Holder, a static class, can read it. */
+    static boolean tvosFocus;
     /** Dock order (config.xml dock_apps, or a theme's config.json). */
     private final List<String> favourites;
     /** Grid apps fill the dock slots dock_apps leaves free (config.xml, fill_dock). */
@@ -250,6 +252,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         this.restNameAlpha = cfg.alwaysShowNames ? 0.75f : 0f;
         this.cinematic = cfg.cinematicHome;
         this.recordOpens = cfg.cinematicHome || CardHome.enabled(ctx);
+        tvosFocus = CardHome.flag(ctx, "tvos_focus");
         this.launchActions = cfg.launchActions;
         this.iconTiles = new HashSet<>(Arrays.asList(ctx.getResources().getStringArray(R.array.icon_tiles)));
         this.tileMenu = cfg.tileMenu;
@@ -916,6 +919,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         final boolean overshoot;
         /** A dock tile: it grows in place without advanced_effects' lift, which reads as off-centre in the band (#2135). */
         boolean inDock;
+        /** tvos_focus only. */
+        final Sheen sheen;
 
         Holder(View v, TileListener listener, boolean animations, boolean advancedEffects,
                boolean reducedMotion, float restNameAlpha, boolean overshoot) {
@@ -941,6 +946,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 }
             });
             card.setClipToOutline(true);
+            sheen = tvosFocus ? new Sheen() : null;
+            if (sheen != null) card.setForeground(sheen);
 
             card.setOnKeyListener((view, keyCode, event) -> {
                 if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
@@ -980,9 +987,10 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                     // Only on focus: snapping it back to -6dp while it fades out would jump it up over the tile.
                     if (focused) name.setTranslationY(density * 4f);
                 } else {
+                    if (sheen != null) sheen.setFocused(focused, true);
                     view.animate().scaleX(s).scaleY(s)
                             .translationY(focused && advancedEffects && !inDock ? -4f * density : 0f)
-                            .translationZ(focused && advancedEffects ? 8f * density : 0f)
+                            .translationZ(focused && (advancedEffects || sheen != null) ? (sheen != null ? 20f : 8f) * density : 0f)
                             .setDuration(advancedEffects ? (focused ? 220 : 170) : (focused ? 260 : 180))
                             .setInterpolator(focused && !overshoot ? new DecelerateInterpolator(1.5f)
                                     : new OvershootInterpolator(focused ? (advancedEffects ? 0.7f : 1.6f) : 0f))
