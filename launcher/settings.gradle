@@ -16,3 +16,4 @@ rootProject.name = "tvhome"
 include ':app'
 include ':weather'
 include ':discover'
+include ':jarvis'

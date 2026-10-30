@@ -463,6 +463,15 @@ final class CardHome {
     }
 
     private void openAssistant() {
+        if (installed("com.gathin.tvjarvis")) {
+            try {
+                activity.startActivity(new Intent().setClassName("com.gathin.tvjarvis", "com.gathin.tvjarvis.JarvisActivity")
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                return;
+            } catch (RuntimeException ignored) {
+                // Fall through to the system assistant.
+            }
+        }
         for (String action : new String[]{"android.intent.action.VOICE_ASSIST", Intent.ACTION_ASSIST,
                 "android.intent.action.VOICE_COMMAND"}) {
             try {

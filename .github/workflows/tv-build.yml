@@ -57,7 +57,7 @@ jobs:
 
       - name: Build release APK
         working-directory: launcher
-        run: ./gradlew :app:assembleRelease ${{ matrix.args }} :weather:assembleRelease :discover:assembleRelease
+        run: ./gradlew :app:assembleRelease ${{ matrix.args }} :weather:assembleRelease :discover:assembleRelease :jarvis:assembleRelease
 
       - name: Name the APK and record its hash
         run: |
@@ -65,6 +65,7 @@ jobs:
           cp launcher/app/build/outputs/apk/release/app-release.apk "out/tvhome-${{ matrix.name }}.apk"
           cp launcher/weather/build/outputs/apk/release/weather-release.apk "out/tvweather-${{ matrix.name }}.apk"
           cp launcher/discover/build/outputs/apk/release/discover-release.apk "out/tvdiscover-${{ matrix.name }}.apk"
+          cp launcher/jarvis/build/outputs/apk/release/jarvis-release.apk "out/tvjarvis-${{ matrix.name }}.apk"
           sha256sum out/*.apk | tee out/SHA256SUMS-${{ matrix.name }}.txt
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           "$BT/apksigner" verify --print-certs "out/tvhome-${{ matrix.name }}.apk" | grep -E "SHA-256" || true

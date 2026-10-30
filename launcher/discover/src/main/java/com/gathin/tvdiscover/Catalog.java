@@ -238,6 +238,23 @@ final class Catalog {
     }
 
     private static JSONObject get(String token, String path) throws IOException, JSONException {
+        IOException last = null;
+        for (int attempt = 0; attempt < 3; attempt++) {
+            try {
+                return getOnce(token, path);
+            } catch (IOException e) {
+                last = e;
+                try {
+                    Thread.sleep(1000L * (attempt + 1));
+                } catch (InterruptedException ie) {
+                    break;
+                }
+            }
+        }
+        throw last != null ? last : new IOException(path);
+    }
+
+    private static JSONObject getOnce(String token, String path) throws IOException, JSONException {
         HttpURLConnection c = (HttpURLConnection) new URL(API + path).openConnection();
         c.setConnectTimeout(10000);
         c.setReadTimeout(15000);
