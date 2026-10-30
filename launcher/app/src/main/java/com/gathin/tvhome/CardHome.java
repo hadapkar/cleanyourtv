@@ -139,7 +139,8 @@ final class CardHome {
                     if (!v.hasFocus() && !v.isFocused()) return;
                     ValueAnimator a = ValueAnimator.ofFloat(0f, (float) (2 * Math.PI));
                     a.setDuration(3600);
-                    a.setRepeatCount(ValueAnimator.INFINITE);
+                    // One slow sway and rest: an endless drift kept the screen redrawing (stutter on 1 GB).
+                    a.setRepeatCount(0);
                     a.setInterpolator(new android.view.animation.LinearInterpolator());
                     a.addUpdateListener(an -> {
                         float t = (float) an.getAnimatedValue();
@@ -1121,6 +1122,7 @@ final class CardHome {
             v.setOnFocusChangeListener((view, focused) -> {
                 sheen.setFocused(focused, true);
                 if (focused) Sounds.tick();
+                if (view == jarvisCard && orb != null) orb.setActive(focused);
                 if (parallax) parallax(view, focused);
                 // A shadow only under solid artwork: under see-through glass (the cards, a Continue item with its
                 // name) Android draws it inside the glass too, which showed as a second, lighter box on the TV.
@@ -1194,15 +1196,24 @@ final class CardHome {
             super(context);
         }
 
-        @Override
-        protected void onAttachedToWindow() {
-            super.onAttachedToWindow();
-            pulse = ObjectAnimator.ofFloat(this, View.SCALE_X, 1f, 1.08f);
-            pulse.setDuration(2400);
-            pulse.setRepeatCount(ValueAnimator.INFINITE);
-            pulse.setRepeatMode(ValueAnimator.REVERSE);
-            pulse.addUpdateListener(a -> setScaleY(getScaleX()));
-            pulse.start();
+        /**
+         * Breathes only while its card has focus: a pulse that never stopped redrew Home on every frame, which on
+         * a 1 GB TV made other motion stutter (76% of frames over 16 ms measured with it running).
+         */
+        void setActive(boolean on) {
+            if (on) {
+                if (pulse == null) {
+                    pulse = ObjectAnimator.ofFloat(this, View.SCALE_X, 1f, 1.08f);
+                    pulse.setDuration(2400);
+                    pulse.setRepeatCount(ValueAnimator.INFINITE);
+                    pulse.setRepeatMode(ValueAnimator.REVERSE);
+                    pulse.addUpdateListener(a -> setScaleY(getScaleX()));
+                }
+                if (!pulse.isStarted()) pulse.start();
+            } else if (pulse != null) {
+                pulse.cancel();
+                animate().scaleX(1f).scaleY(1f).setDuration(200).start();
+            }
         }
 
         @Override
