@@ -10,11 +10,6 @@
   ],
   "background_color": "#090C14",
   "plain_glass": true,
-  "frame_rate_apps": {
-    "app.cricfy.tv": 50,
-    "in.startv.hotstar": 50,
-    "com.sonyliv": 50
-  },
   "app_volume": true,
   "wallpaper": true,
   "wallpaper_moods": {
