@@ -284,7 +284,7 @@ public class JarvisActivity extends Activity {
         status.setText("Jarvis");
         reply.setText(str(a, "say"));
         // Spoken only when there is something to hear; opening an app speaks for itself.
-        if (!action.equals("open_app") && !action.equals("search")) speak(str(a, "say"));
+        if (!action.equals("open_app") && !action.equals("search") && !action.equals("volume")) speak(str(a, "say"));
         switch (action) {
             case "open_app":
                 if (!installed(app)) reply.setText("That app is not on this TV.");
@@ -298,6 +298,9 @@ public class JarvisActivity extends Activity {
                 break;
             case "set_city":
                 setCity(str(a, "city"));
+                break;
+            case "volume":
+                volume(str(a, "volume"), a.optInt("level", 0));
                 break;
             default:
                 break;
@@ -407,6 +410,29 @@ public class JarvisActivity extends Activity {
         Locale want = hindi ? new Locale("hi", "IN") : new Locale("en", "IN");
         if (tts.isLanguageAvailable(want) >= TextToSpeech.LANG_AVAILABLE) tts.setLanguage(want);
         tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis");
+    }
+
+    /** The TV's media volume: mute, unmute, up, down, or set to a percentage. No permission needed. */
+    private void volume(String what, int level) {
+        android.media.AudioManager am = getSystemService(android.media.AudioManager.class);
+        if (am == null) return;
+        int stream = android.media.AudioManager.STREAM_MUSIC, ui = android.media.AudioManager.FLAG_SHOW_UI;
+        switch (what) {
+            case "mute": am.adjustStreamVolume(stream, android.media.AudioManager.ADJUST_MUTE, ui); break;
+            case "unmute": am.adjustStreamVolume(stream, android.media.AudioManager.ADJUST_UNMUTE, ui); break;
+            case "up":
+                for (int i = 0; i < 3; i++) am.adjustStreamVolume(stream, android.media.AudioManager.ADJUST_RAISE, i == 2 ? ui : 0);
+                break;
+            case "down":
+                for (int i = 0; i < 3; i++) am.adjustStreamVolume(stream, android.media.AudioManager.ADJUST_LOWER, i == 2 ? ui : 0);
+                break;
+            case "set":
+                int max = am.getStreamMaxVolume(stream);
+                am.setStreamVolume(stream, Math.round(max * Math.max(0, Math.min(100, level)) / 100f), ui);
+                break;
+            default:
+                break;
+        }
     }
 
     /** Looks the city up (Open-Meteo geocoding, no key) and hands it to the TV Weather add-on. */

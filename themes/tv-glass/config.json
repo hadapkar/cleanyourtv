@@ -69,5 +69,11 @@
   "boot_intro_subtitle": "powered by Sudarshan",
   "band_every_row": true,
   "app_switcher": true,
-  "focus_sounds": true
+  "focus_sounds": true,
+  "app_keys": [
+    "scan:393:com.netflix.ninja",
+    "scan:416:com.netflix.ninja",
+    "hold:scan:393:mute",
+    "hold:scan:416:mute"
+  ]
 }
