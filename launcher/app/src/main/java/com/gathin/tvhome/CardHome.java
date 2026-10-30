@@ -490,7 +490,7 @@ final class CardHome {
         container.setDescendantFocusability(away ? android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS
                 : android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS);
         container.animate().alpha(alpha).translationY(y).scaleX(scale).scaleY(scale).setDuration(away ? 420 : 360)
-                .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).withLayer().start();
+                .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).start();
     }
 
     /**

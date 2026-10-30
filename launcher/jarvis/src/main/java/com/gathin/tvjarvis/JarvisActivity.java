@@ -56,7 +56,12 @@ public class JarvisActivity extends Activity {
     private SpeechRecognizer recognizer;
     /** Speaks each answer with the TV's own (offline) voice; null until it is ready, or when there is none. */
     private TextToSpeech tts;
-    private boolean ttsReady;
+    private volatile boolean ttsReady;
+    /**
+     * Every call into the TV's speech engine runs here: on this TV a language check could take seconds, and on the
+     * main thread that froze Jarvis until Android closed it (input dispatching timed out).
+     */
+    private final java.util.concurrent.ExecutorService voice = java.util.concurrent.Executors.newSingleThreadExecutor();
     private float d;
     private TextView hints;
     /** One automatic retry when nothing was heard, so a slow start to speaking is not an error. */
@@ -121,6 +126,7 @@ public class JarvisActivity extends Activity {
                 && under.getPlaybackState().getState() == android.media.session.PlaybackState.STATE_PLAYING) wasPlaying = under;
         audioWasPlaying = under == null && Actions.audioPlaying(this);
         tts = new TextToSpeech(this, st -> ttsReady = st == TextToSpeech.SUCCESS);
+        voice.execute(() -> { /* warm the thread */ });
 
         if (Gemini.key(this).isEmpty()) {
             showState("Not set up", "", "Add the Gemini key from the laptop, then try again.");
@@ -154,7 +160,13 @@ public class JarvisActivity extends Activity {
     // ---- listening -------------------------------------------------------------------------------
 
     private void listen() {
-        if (tts != null) tts.stop();
+        if (tts != null) voice.execute(() -> {
+            try {
+                tts.stop();
+            } catch (RuntimeException ignored) {
+                // Not bound yet.
+            }
+        });
         cancelPending();
         hints.setVisibility(View.VISIBLE);
         choices.removeAllViews();
@@ -467,8 +479,14 @@ public class JarvisActivity extends Activity {
         if (!ttsReady || text == null || text.isEmpty()) return;
         boolean hindi = text.codePoints().anyMatch(c -> c >= 0x0900 && c <= 0x097F);
         Locale want = hindi ? new Locale("hi", "IN") : new Locale("en", "IN");
-        if (tts.isLanguageAvailable(want) >= TextToSpeech.LANG_AVAILABLE) tts.setLanguage(want);
-        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis");
+        voice.execute(() -> {
+            try {
+                if (tts.isLanguageAvailable(want) >= TextToSpeech.LANG_AVAILABLE) tts.setLanguage(want);
+                tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis");
+            } catch (RuntimeException ignored) {
+                // The engine went away (Jarvis closing): nothing to say.
+            }
+        });
     }
 
     private void showIfAny(String line) {
@@ -755,7 +773,11 @@ public class JarvisActivity extends Activity {
     @Override
     protected void onDestroy() {
         if (recognizer != null) recognizer.destroy();
-        if (tts != null) tts.shutdown();
+        if (tts != null) {
+            TextToSpeech t = tts;
+            voice.execute(t::shutdown);
+        }
+        voice.shutdown();
         orb.setMode(OrbView.IDLE);
         super.onDestroy();
     }
