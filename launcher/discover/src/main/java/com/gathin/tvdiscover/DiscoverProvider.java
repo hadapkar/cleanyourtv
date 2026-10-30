@@ -115,7 +115,8 @@ public class DiscoverProvider extends ContentProvider {
         }
         // Backup and restore of the owner's taste and My list: from the laptop's ADB shell only.
         if ("export".equals(method) || "restore".equals(method)) {
-            if (!"com.android.shell".equals(getCallingPackage())) return null;
+            // The shell's uid (2000): Android does not name the calling package for a call() from `content call`.
+            if (android.os.Binder.getCallingUid() != 2000) return null;
             Bundle out = new Bundle();
             out.putBoolean("ok", "export".equals(method) ? Backup.export(getContext()) : Backup.restore(getContext()));
             return out;

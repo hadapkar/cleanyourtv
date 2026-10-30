@@ -15,13 +15,17 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * The owner's Home choices (Launcher settings: dock order, apps added to Home, wallpaper, ...) as a file the laptop
+ * The owner's Home choices (Launcher settings, the tile order and the apps added to or taken off Home) as a file the laptop
  * can copy off the TV: {@code <external files>/backup/home.json}, written when Home is left. A {@code restore/home.json}
  * pushed back is applied when Home next starts, then deleted; with a "city" it also sets TV Weather's city.
  * Only these choices go in it; the add-ons' keys never live in Home.
  */
 final class SettingsBackup {
     private static final Uri WEATHER = Uri.parse("content://com.gathin.tvweather/current");
+    /** The owner's tile order (Order) and the apps added to or taken off Home (LibraryApps), in private files. */
+    private static final String[] FILES = {Order.FILE_NAME, "library_apps.txt", "library_home_removed.txt"};
+    /** Worked out by Home from the theme it was built with; restoring an old one would only confuse the rebuild. */
+    private static final Set<String> DERIVED = new HashSet<>(java.util.Collections.singletonList("theme_signature"));
 
     private SettingsBackup() {
     }
@@ -43,6 +47,7 @@ final class SettingsBackup {
         if (!dir.isDirectory() && !dir.mkdirs()) return;
         JSONObject prefs = new JSONObject();
         for (Map.Entry<String, ?> e : ctx.getSharedPreferences(Config.SETTINGS_NAME, Context.MODE_PRIVATE).getAll().entrySet()) {
+            if (DERIVED.contains(e.getKey())) continue;
             Object v = e.getValue();
             JSONObject typed = new JSONObject();
             if (v instanceof Set) {
@@ -62,7 +67,12 @@ final class SettingsBackup {
             }
             prefs.put(e.getKey(), typed);
         }
-        String text = new JSONObject().put("version", 1).put(Config.SETTINGS_NAME, prefs).toString(2);
+        JSONObject files = new JSONObject();
+        for (String name : FILES) {
+            File f = new File(ctx.getFilesDir(), name);
+            if (f.isFile()) files.put(name, new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8));
+        }
+        String text = new JSONObject().put("version", 1).put(Config.SETTINGS_NAME, prefs).put("files", files).toString(2);
         File out = new File(dir, "home.json");
         if (out.isFile() && text.equals(new String(Files.readAllBytes(out.toPath()), StandardCharsets.UTF_8))) return;
         File tmp = new File(dir, "home.json.tmp");
@@ -82,6 +92,7 @@ final class SettingsBackup {
                 java.util.Iterator<String> keys = prefs.keys();
                 while (keys.hasNext()) {
                     String k = keys.next();
+                    if (DERIVED.contains(k)) continue;
                     JSONObject typed = prefs.getJSONObject(k);
                     switch (typed.optString("t")) {
                         case "set": {
@@ -99,6 +110,16 @@ final class SettingsBackup {
                     }
                 }
                 ed.commit();
+            }
+            JSONObject files = root.optJSONObject("files");
+            if (files != null) {
+                for (String name : FILES) {
+                    if (!files.has(name)) continue;
+                    File f = new File(ctx.getFilesDir(), name);
+                    // AtomicFile treats a leftover .bak as an interrupted write and would read it instead.
+                    new File(f.getPath() + ".bak").delete();
+                    Files.write(f.toPath(), files.getString(name).getBytes(StandardCharsets.UTF_8));
+                }
             }
             String city = root.optString("city", "");
             if (!city.isEmpty()) {
