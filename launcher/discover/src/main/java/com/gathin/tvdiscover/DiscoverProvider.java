@@ -55,7 +55,7 @@ public class DiscoverProvider extends ContentProvider {
         }
         if ("cricket".equals(what)) {
             MatrixCursor c = new MatrixCursor(CRICKET);
-            for (JSONObject m : Cricket.matches()) {
+            for (JSONObject m : Cricket.matches(getContext())) {
                 c.addRow(new Object[]{m.optString("team1"), m.optString("score1"), m.optString("team2"),
                         m.optString("score2"), m.optInt("batting"), m.optInt("priority"), m.optInt("live")});
             }

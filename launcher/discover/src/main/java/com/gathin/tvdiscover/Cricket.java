@@ -43,18 +43,28 @@ final class Cricket {
      * live when its score changed within this long; each match's last score and when it changed are kept here.
      */
     private static final long LIVE_MS = 15 * 60 * 1000L;
-    private static final java.util.Map<String, String> lastScore = new java.util.HashMap<>();
-    private static final java.util.Map<String, Long> changedAt = new java.util.HashMap<>();
+    /**
+     * Kept in preferences, not memory: on a 1 GB TV Android often stops this add-on between reads, and a restart
+     * starts it fresh; either way a live match would never be seen changing.
+     */
+    private static final String PREF_SEEN = "cricket_seen";
 
     private Cricket() {
     }
 
-    static synchronized List<JSONObject> matches() {
+    static synchronized List<JSONObject> matches(android.content.Context ctx) {
         long now = System.currentTimeMillis();
         if (now - fetched < FRESH_MS) return last;
         fetched = now;
         try {
-            last = parse(fetch());
+            JSONObject seen;
+            try {
+                seen = new JSONObject(Catalog.prefs(ctx).getString(PREF_SEEN, "{}"));
+            } catch (JSONException e) {
+                seen = new JSONObject();
+            }
+            last = parse(fetch(), seen);
+            Catalog.prefs(ctx).edit().putString(PREF_SEEN, seen.toString()).apply();
             succeeded = now;
         } catch (Exception e) {
             if (now - succeeded > STALE_MS) last = Collections.emptyList();
@@ -82,7 +92,17 @@ final class Cricket {
         }
     }
 
-    private static List<JSONObject> parse(List<String> titles) throws JSONException {
+    /**
+     * {@code seen}: per match, {"s": its scores, "c": when they last changed}. Rebuilt from this feed, so matches
+     * that left it are forgotten.
+     */
+    private static List<JSONObject> parse(List<String> titles, JSONObject seen) throws JSONException {
+        JSONObject before = new JSONObject(seen.toString());
+        java.util.Iterator<String> old = seen.keys();
+        while (old.hasNext()) {
+            old.next();
+            old.remove();
+        }
         List<JSONObject> india = new ArrayList<>(), ipl = new ArrayList<>(), intl = new ArrayList<>(), rest = new ArrayList<>();
         for (String title : titles) {
             String[] sides = title.split("\\s+v\\s+", 2);
@@ -92,13 +112,15 @@ final class Cricket {
             JSONObject m = new JSONObject();
             m.put("team1", a[0]).put("score1", a[1]).put("team2", b[0]).put("score2", b[1]);
             m.put("batting", !a[2].isEmpty() ? 1 : !b[2].isEmpty() ? 2 : 0);
-            // First sight of a match says nothing about it being live; a change of score since does.
-            String key = a[0] + "|" + b[0], scores = a[1] + "|" + b[1];
-            String before = lastScore.put(key, scores);
+            // First sight of a match says nothing about it being live; a change of score since does. The feed
+            // lists a Test's innings in any order, so they are compared sorted.
+            String key = a[0] + "|" + b[0], scores = sorted(a[1]) + "|" + sorted(b[1]);
             long now = System.currentTimeMillis();
-            if (before != null && !before.equals(scores)) changedAt.put(key, now);
-            Long changed = changedAt.get(key);
-            m.put("live", changed != null && now - changed < LIVE_MS ? 1 : 0);
+            JSONObject prev = before.optJSONObject(key);
+            long changed = prev == null ? 0 : prev.optLong("c", 0);
+            if (prev != null && !scores.equals(prev.optString("s"))) changed = now;
+            seen.put(key, new JSONObject().put("s", scores).put("c", changed));
+            m.put("live", changed > 0 && now - changed < LIVE_MS ? 1 : 0);
             boolean ind = nation(a[0]).equals("India") || nation(b[0]).equals("India");
             boolean league = IPL.contains(nation(a[0])) || IPL.contains(nation(b[0]));
             boolean both = NATIONS.contains(nation(a[0])) && NATIONS.contains(nation(b[0]));
@@ -126,6 +148,12 @@ final class Cricket {
         String team = String.join(" ", Arrays.copyOfRange(words, 0, i));
         String score = String.join(" ", Arrays.copyOfRange(words, i, words.length)).replaceAll("\\s*&\\s*", " & ");
         return new String[]{team, score, bat};
+    }
+
+    private static String sorted(String score) {
+        String[] innings = score.split("\\s*&\\s*");
+        Arrays.sort(innings);
+        return String.join(" & ", innings);
     }
 
     /** "India Women", "India A" and "India U19" count as India. */

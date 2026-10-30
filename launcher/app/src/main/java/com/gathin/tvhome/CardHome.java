@@ -889,10 +889,23 @@ final class CardHome {
         return s == null ? team : s + suffix;
     }
 
-    /** "79/6 & 272/10" -> "272/10": the innings now being played, or the last one. */
+    /**
+     * A Test's innings in play: the feed lists them in any order ("329/10 & 288/5" or "288/5 & 329/10"), so the one
+     * not yet over (not all out, not declared) is taken; with none or both open, the last listed.
+     */
     private static String currentInnings(String score) {
-        int amp = score.lastIndexOf('&');
-        return amp < 0 ? score : score.substring(amp + 1).trim();
+        String[] innings = score.split("\\s*&\\s*");
+        if (innings.length < 2) return score.trim();
+        String open = null;
+        int openCount = 0;
+        for (String s : innings) {
+            String t = s.trim();
+            if (!t.endsWith("/10") && !t.endsWith("d") && !t.matches("\\d+")) {
+                open = t;
+                openCount++;
+            }
+        }
+        return openCount == 1 ? open : innings[innings.length - 1].trim();
     }
 
     private static LinearLayout.LayoutParams rowLp(int top) {
