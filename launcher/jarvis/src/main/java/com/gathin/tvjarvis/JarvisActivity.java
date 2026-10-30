@@ -214,6 +214,8 @@ public class JarvisActivity extends Activity {
 
         @Override
         public void onError(int error) {
+            // Google's recognizer reports the session listen() just cancelled as a client error; the new one runs.
+            if (error == SpeechRecognizer.ERROR_CLIENT && android.os.SystemClock.uptimeMillis() - lastListen < 1500) return;
             orb.setMode(OrbView.IDLE);
             boolean nothingHeard = error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT;
             if (nothingHeard && !retried) {
@@ -786,7 +788,15 @@ public class JarvisActivity extends Activity {
         if (recognizer != null) recognizer.destroy();
         if (tts != null) {
             TextToSpeech t = tts;
-            voice.execute(t::shutdown);
+            // By the time the voice thread gets here the activity may be gone, and unbinding the speech engine
+            // throws "Service not registered": that crashed Jarvis just after it closed.
+            voice.execute(() -> {
+                try {
+                    t.shutdown();
+                } catch (RuntimeException ignored) {
+                    // Already unbound with the activity.
+                }
+            });
         }
         voice.shutdown();
         orb.setMode(OrbView.IDLE);
