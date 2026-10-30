@@ -199,6 +199,7 @@ async function main() {
     } else if (verb === 'theme') {
       const dir = '/sdcard/Android/data/com.gathin.tvhome/files';
       const files = ['config.json'];
+      for (const extra of ['clock.png', 'clock.jpg']) if (fs.existsSync(path.join(args[0], extra))) files.push(extra);
       const wp = path.join(args[0], 'wallpapers');
       if (fs.existsSync(wp)) for (const n of fs.readdirSync(wp)) files.push('wallpapers/' + n);
       await adb.shell(`mkdir -p ${dir}/wallpapers; rm -f ${dir}/wallpapers/*`);

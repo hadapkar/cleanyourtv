@@ -30,7 +30,7 @@ public class WeatherProvider extends ContentProvider {
     private static final String PREFS = "weather";
     private static final long STALE_MS = 20 * 60 * 1000L;
     private static final long MIN_GAP_MS = 2 * 60 * 1000L;
-    private static final String[] COLUMNS = {"temp_c", "code", "text", "city", "updated"};
+    private static final String[] COLUMNS = {"temp_c", "code", "text", "city", "updated", "sunrise"};
 
     private volatile boolean fetching;
     private volatile long lastAttempt;
@@ -47,7 +47,8 @@ public class WeatherProvider extends ContentProvider {
         if (System.currentTimeMillis() - updated > STALE_MS) refreshAsync();
         MatrixCursor cursor = new MatrixCursor(COLUMNS);
         if (updated > 0) {
-            cursor.addRow(new Object[]{sp.getFloat("temp", 0f), sp.getInt("code", 0), sp.getString("text", ""), CITY, updated});
+            cursor.addRow(new Object[]{sp.getFloat("temp", 0f), sp.getInt("code", 0), sp.getString("text", ""), CITY, updated,
+                    sp.getString("sunrise", "")});
         }
         return cursor;
     }
@@ -80,7 +81,7 @@ public class WeatherProvider extends ContentProvider {
 
     private void fetch() throws Exception {
         URL url = new URL("https://api.open-meteo.com/v1/forecast?latitude=" + LAT + "&longitude=" + LON
-                + "&current=temperature_2m,weather_code&timezone=auto");
+                + "&current=temperature_2m,weather_code&daily=sunrise&forecast_days=1&timezone=auto");
         HttpURLConnection c = (HttpURLConnection) url.openConnection();
         c.setConnectTimeout(10000);
         c.setReadTimeout(10000);
@@ -88,10 +89,16 @@ public class WeatherProvider extends ContentProvider {
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             byte[] buf = new byte[4096];
             for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
-            JSONObject cur = new JSONObject(out.toString(StandardCharsets.UTF_8.name())).getJSONObject("current");
+            JSONObject json = new JSONObject(out.toString(StandardCharsets.UTF_8.name()));
+            JSONObject cur = json.getJSONObject("current");
             int code = cur.getInt("weather_code");
+            // "2026-10-30T06:35" in the place's own time: keep "06:35".
+            JSONObject daily = json.optJSONObject("daily");
+            String sunrise = daily == null ? "" : daily.getJSONArray("sunrise").optString(0, "");
+            if (sunrise.length() >= 16) sunrise = sunrise.substring(11, 16);
             prefs().edit().putFloat("temp", (float) cur.getDouble("temperature_2m")).putInt("code", code)
-                    .putString("text", describe(code)).putLong("updated", System.currentTimeMillis()).apply();
+                    .putString("text", describe(code)).putString("sunrise", sunrise)
+                    .putLong("updated", System.currentTimeMillis()).apply();
         } finally {
             c.disconnect();
         }

@@ -3,6 +3,7 @@ package com.gathin.tvhome;
 import android.animation.ArgbEvaluator;
 import android.content.Context;
 import android.content.res.Resources;
+import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.drawable.BitmapDrawable;
@@ -11,13 +12,24 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.LayerDrawable;
 import android.os.Handler;
+import android.net.Uri;
 import android.os.Looper;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.style.RelativeSizeSpan;
+import android.util.TypedValue;
+import android.view.Gravity;
+import android.view.ViewGroup;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import android.util.DisplayMetrics;
 import android.view.View;
 import android.widget.ImageView;
 
 import java.io.File;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
@@ -116,6 +128,15 @@ final class ClockScene {
         } catch (RuntimeException e) {
             return;
         }
+        // A theme's own clock.png (or .jpg): a scene just for the screensaver, with a bigger clock and the weather.
+        File scene = sceneFile(ctx);
+        if (scene != null) {
+            wallpaperFile = scene;
+            wallpaperShade = (cfg.clockWallpaperDim * 255 / 100) << 24;
+            wallpaperRes = ctx.getResources();
+            showSceneExtras(ctx);
+            return;
+        }
         if (!cfg.clockWallpaper) {
             // clock_glow false: plain black behind the clock (OLED); the clock itself still moves every minute.
             if (!cfg.clockGlow) {
@@ -146,6 +167,88 @@ final class ClockScene {
         }
         wallpaperShade = (cfg.clockWallpaperDim * 255 / 100) << 24;
         wallpaperRes = ctx.getResources();
+    }
+
+    private static File sceneFile(Context ctx) {
+        File dir = Config.dir(ctx);
+        if (dir == null) return null;
+        for (String name : new String[]{"clock.png", "clock.jpg"}) {
+            File f = new File(dir, name);
+            if (f.isFile()) return f;
+        }
+        return null;
+    }
+
+    /** The scene's larger clock, and chips with the weather and sunrise from the TV Weather add-on, when it has them. */
+    private void showSceneExtras(Context ctx) {
+        if (!(content instanceof LinearLayout)) return;
+        LinearLayout box = (LinearLayout) content;
+        box.setGravity(Gravity.CENTER_HORIZONTAL);
+        View clockRow = box.getChildAt(0);
+        if (clockRow instanceof ViewGroup && ((ViewGroup) clockRow).getChildAt(0) instanceof TextView) {
+            ((TextView) ((ViewGroup) clockRow).getChildAt(0)).setTextSize(TypedValue.COMPLEX_UNIT_SP, 168);
+        }
+        float d = ctx.getResources().getDisplayMetrics().density;
+        LinearLayout chips = new LinearLayout(ctx);
+        LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-2, -2);
+        rowLp.topMargin = Math.round(22 * d);
+        rowLp.gravity = Gravity.CENTER_HORIZONTAL;
+        box.addView(chips, rowLp);
+        TextView weather = chip(ctx, d), sunrise = chip(ctx, d);
+        chips.addView(weather);
+        LinearLayout.LayoutParams gap = new LinearLayout.LayoutParams(-2, -2);
+        gap.leftMargin = Math.round(14 * d);
+        chips.addView(sunrise, gap);
+        new Thread(() -> {
+            String[] w = readWeather(ctx);
+            if (w == null) return;
+            handler.post(() -> {
+                setChip(weather, w[0], w[1]);
+                setChip(sunrise, "Sunrise", w[2]);
+            });
+        }, "clock-weather").start();
+    }
+
+    /** {city, "24\u00b0 Partly cloudy", "6:35 AM"}, or null without the add-on or a reading. */
+    private static String[] readWeather(Context ctx) {
+        try (Cursor c = ctx.getContentResolver().query(Uri.parse("content://com.gathin.tvweather/current"),
+                null, null, null, null)) {
+            if (c == null || !c.moveToFirst()) return null;
+            String temp = Math.round(c.getFloat(c.getColumnIndexOrThrow("temp_c"))) + "\u00b0 "
+                    + c.getString(c.getColumnIndexOrThrow("text"));
+            int col = c.getColumnIndex("sunrise");
+            String rise = col < 0 ? "" : c.getString(col);
+            if (rise != null && rise.length() == 5) {
+                rise = LocalTime.parse(rise).format(DateTimeFormatter.ofPattern("h:mm a"));
+            }
+            return new String[]{c.getString(c.getColumnIndexOrThrow("city")), temp, rise == null ? "" : rise};
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static TextView chip(Context ctx, float d) {
+        TextView t = new TextView(ctx);
+        t.setTextColor(0xF2FFFFFF);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+        t.setPadding(Math.round(18 * d), Math.round(10 * d), Math.round(18 * d), Math.round(10 * d));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(12 * d);
+        bg.setColor(0x26FFFFFF);
+        bg.setStroke(Math.max(1, Math.round(d)), 0x66FFFFFF);
+        t.setBackground(bg);
+        t.setVisibility(View.GONE);
+        return t;
+    }
+
+    /** A small capitalised label over the value, like "PUNE" over "24\u00b0 Partly cloudy". */
+    private static void setChip(TextView t, String label, String value) {
+        if (value == null || value.isEmpty()) return;
+        SpannableStringBuilder s = new SpannableStringBuilder(label.toUpperCase(java.util.Locale.getDefault()));
+        s.setSpan(new RelativeSizeSpan(0.55f), 0, s.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        s.append('\n').append(value);
+        t.setText(s);
+        t.setVisibility(View.VISIBLE);
     }
 
     private void loadWallpaper() {

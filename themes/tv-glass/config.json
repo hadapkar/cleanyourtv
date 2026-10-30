@@ -58,5 +58,8 @@
     "org.localsend.localsend_app",
     "org.videolan.vlc"
   ],
-  "ambient_glow": false
+  "ambient_glow": false,
+  "clock_wallpaper": true,
+  "clock_wallpaper_dim": 10,
+  "home_idle_clock_minutes": 10
 }
