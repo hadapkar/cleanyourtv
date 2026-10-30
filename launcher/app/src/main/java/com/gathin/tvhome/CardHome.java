@@ -1047,10 +1047,10 @@ final class CardHome {
         lastCricket = System.currentTimeMillis();
         new Thread(() -> {
             java.util.List<String[]> matches = readCricket();
-            // India's match, else an IPL match (priority 3, then 2; the list comes in that order).
+            // Only a match being played: India's, else an IPL one (live first, then priority 3, 2).
             String[] top = null;
             for (String[] m : matches) {
-                if ("3".equals(m[5]) || "2".equals(m[5])) {
+                if ("1".equals(m[6]) && ("3".equals(m[5]) || "2".equals(m[5]))) {
                     top = m;
                     break;
                 }

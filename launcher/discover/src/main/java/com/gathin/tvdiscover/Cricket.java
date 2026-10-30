@@ -19,7 +19,7 @@ import java.util.Set;
 /**
  * Live and recent cricket scores from ESPNcricinfo's public RSS feed (no key; the feed asks for a refresh every
  * two minutes). Each item's title is "Team A 185/10 & 172/10 * v Team B 112/10", the star marking the side batting.
- * India's matches come first, then the IPL, then other internationals, then the rest, in the feed's order.
+ * Live matches come first (India's, then the IPL, then other internationals, then the rest), finished ones after.
  */
 final class Cricket {
     private static final String FEED = "https://static.cricinfo.com/rss/livescores.xml";
@@ -103,7 +103,7 @@ final class Cricket {
             old.next();
             old.remove();
         }
-        List<JSONObject> india = new ArrayList<>(), ipl = new ArrayList<>(), intl = new ArrayList<>(), rest = new ArrayList<>();
+        List<JSONObject> out = new ArrayList<>();
         for (String title : titles) {
             String[] sides = title.split("\\s+v\\s+", 2);
             if (sides.length != 2) continue;
@@ -125,12 +125,12 @@ final class Cricket {
             boolean league = IPL.contains(nation(a[0])) || IPL.contains(nation(b[0]));
             boolean both = NATIONS.contains(nation(a[0])) && NATIONS.contains(nation(b[0]));
             m.put("priority", ind ? 3 : league ? 2 : both ? 1 : 0);
-            (ind ? india : league ? ipl : both ? intl : rest).add(m);
+            out.add(m);
         }
-        List<JSONObject> out = new ArrayList<>(india);
-        out.addAll(ipl);
-        out.addAll(intl);
-        out.addAll(rest);
+        // Live matches first, India's then the IPL's then the rest; finished ones after, in the same order. India's
+        // finished match never goes above a match being played. The sort is stable, so the feed's order breaks ties.
+        out.sort((x, y) -> x.optInt("live") != y.optInt("live") ? y.optInt("live") - x.optInt("live")
+                : y.optInt("priority") - x.optInt("priority"));
         return out;
     }
 
