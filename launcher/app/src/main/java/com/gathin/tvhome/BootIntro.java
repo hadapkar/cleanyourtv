@@ -4,11 +4,13 @@ import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.content.Context;
 import android.graphics.Color;
+import android.graphics.PixelFormat;
 import android.graphics.Typeface;
 import android.provider.Settings;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
+import android.view.WindowManager;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -31,10 +33,46 @@ final class BootIntro {
         return !CardHome.string(ctx, "boot_intro_title").isEmpty();
     }
 
+    /**
+     * On wake from standby: the intro as a system overlay over whatever is on screen (an app keeps running under
+     * it), so the TV is back where it was when the overlay fades. Needs "display over other apps"
+     * (appops SYSTEM_ALERT_WINDOW, granted from the shell). Returns false when it cannot draw one.
+     */
+    static boolean showOverlay(Context ctx) {
+        if (!enabled(ctx) || !Settings.canDrawOverlays(ctx)) return false;
+        WindowManager wm = ctx.getSystemService(WindowManager.class);
+        if (wm == null) return false;
+        FrameLayout host = new FrameLayout(ctx);
+        WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                        | WindowManager.LayoutParams.FLAG_FULLSCREEN,
+                PixelFormat.OPAQUE);
+        try {
+            wm.addView(host, lp);
+        } catch (RuntimeException e) {
+            return false;
+        }
+        play(ctx, host, CardHome.string(ctx, "boot_intro_title"), CardHome.string(ctx, "boot_intro_subtitle"),
+                false, () -> {
+                    try {
+                        wm.removeView(host);
+                    } catch (RuntimeException ignored) {
+                        // Already gone.
+                    }
+                });
+        return true;
+    }
+
     /** Shows the intro over root now (Home after the TV woke from standby). */
     static void showNow(Activity activity, FrameLayout root) {
         if (!enabled(activity)) return;
         show(activity, root, CardHome.string(activity, "boot_intro_title"), CardHome.string(activity, "boot_intro_subtitle"));
+    }
+
+    private static void show(Activity activity, FrameLayout root, String title, String subtitle) {
+        play(activity, root, title, subtitle, true, null);
     }
 
     /** Shows the intro over root if this is the first Home since boot (or {@code force}). */
@@ -48,13 +86,20 @@ final class BootIntro {
         show(activity, root, title, CardHome.string(activity, "boot_intro_subtitle"));
     }
 
-    private static void show(Activity activity, FrameLayout root, String title, String subtitle) {
+    /**
+     * Plays the intro in parent. skippable: the cover takes focus and any key ends it (inside Home; an overlay
+     * cannot take keys without stealing them from the app under it). done runs once it has faded out.
+     */
+    private static void play(Context activity, FrameLayout root, String title, String subtitle, boolean skippable,
+                             Runnable done) {
         float d = activity.getResources().getDisplayMetrics().density;
         FrameLayout cover = new FrameLayout(activity);
         cover.setBackgroundColor(Color.BLACK);
-        cover.setClickable(true);
-        cover.setFocusable(true);
-        cover.setFocusableInTouchMode(true);
+        if (skippable) {
+            cover.setClickable(true);
+            cover.setFocusable(true);
+            cover.setFocusableInTouchMode(true);
+        }
 
         LinearLayout col = new LinearLayout(activity);
         col.setOrientation(LinearLayout.VERTICAL);
@@ -89,7 +134,7 @@ final class BootIntro {
         if (!subtitle.isEmpty()) col.addView(small, slp);
 
         root.addView(cover, new FrameLayout.LayoutParams(-1, -1));
-        cover.requestFocus();
+        if (skippable) cover.requestFocus();
 
         // Letters draw together from wide spacing while they fade in.
         ValueAnimator reveal = ValueAnimator.ofFloat(0f, 1f);
@@ -110,13 +155,18 @@ final class BootIntro {
             if (cover.getParent() == null || cover.getTag() != null) return;
             cover.setTag("closing");
             reveal.cancel();
-            cover.animate().alpha(0f).setDuration(600).withEndAction(() -> root.removeView(cover)).start();
+            cover.animate().alpha(0f).setDuration(600).withEndAction(() -> {
+                root.removeView(cover);
+                if (done != null) done.run();
+            }).start();
         };
         cover.postDelayed(finish, 3000);
         // Any key skips; the key itself does nothing else.
-        cover.setOnKeyListener((v, keyCode, event) -> {
-            finish.run();
-            return true;
-        });
+        if (skippable) {
+            cover.setOnKeyListener((v, keyCode, event) -> {
+                finish.run();
+                return true;
+            });
+        }
     }
 }

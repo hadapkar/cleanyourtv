@@ -164,6 +164,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             } else if (Intent.ACTION_SCREEN_ON.equals(intent.getAction()) && screenOffAt > 0
                     && android.os.SystemClock.elapsedRealtime() - screenOffAt > 3000) {
                 screenOffAt = 0;
+                // Over whatever woke up (an app stays where it was); inside Home if overlays are not allowed.
+                if (BootIntro.showOverlay(getApplicationContext())) return;
                 if (resumed) BootIntro.showNow(MainActivity.this, root);
                 else introOnResume = true;
             }

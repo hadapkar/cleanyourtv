@@ -24,6 +24,9 @@
 
     <!-- Android 11+ package visibility: lets the launcher list the TV apps it shows as tiles, and the
          apps that declare a module card (docs/specs/card.md). -->
+    <!-- The start-up title over whatever app the TV wakes into (granted from the shell: appops SYSTEM_ALERT_WINDOW). -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
     <queries>
         <!-- The TV Weather add-on's provider (card_home reads the weather from it; the launcher itself stays offline). -->
         <provider android:authorities="com.gathin.tvweather" />
