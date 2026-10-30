@@ -22,20 +22,25 @@ import java.util.List;
  */
 final class Gemini {
     private static final String PREFS = "jarvis";
-    // Google's alias for the current Flash model; fixed names such as gemini-2.5-flash are retired for new keys.
-    static final String DEFAULT_MODEL = "gemini-flash-latest";
+    // Google's aliases for the current Flash models; fixed names such as gemini-2.5-flash are retired for new
+    // keys. The light one answers in about a second, which matters more on a TV than the last bit of quality.
+    static final String DEFAULT_MODEL = "gemini-flash-lite-latest";
+    /** Tried when the first model is busy (429/5xx): slower, but usually free when the light one is not. */
+    private static final String FALLBACK_MODEL = "gemini-flash-latest";
 
     private static final String SYSTEM = "You are Jarvis, the voice assistant of an Android TV in India. "
             + "The owner speaks English, Hindi or Hinglish. Reply with one JSON object only, no prose, in this shape: "
             + "{\"say\": short friendly sentence to show on screen, "
-            + "\"action\": one of \"open_app\", \"search\", \"options\", \"answer\", "
+            + "\"action\": one of \"open_app\", \"search\", \"options\", \"set_city\", \"answer\", "
             + "\"app\": package name from the installed list or \"\", "
-            + "\"query\": what to search for or \"\", "
+            + "\"query\": what to search for or \"\", \"city\": a city name for set_city or \"\", "
             + "\"options\": up to 5 objects {\"title\": a film or show title, \"app\": package name, \"why\": four words} }. "
             + "open_app: the owner wants an app. search: the owner wants a specific film, show, song or video; pick the "
             + "app most likely to have it (YouTube for songs, clips and trailers). options: the owner asks for "
-            + "suggestions; give real titles available in India on the listed apps. answer: anything else; put the "
-            + "answer in say, at most two sentences. Only use package names from the list.";
+            + "suggestions; give real titles available in India on the listed apps. set_city: the owner wants the weather "
+            + "for another city from now on. answer: anything else; put the "
+            + "answer in say, at most two sentences. Only use package names from the list. Option titles must be real "
+            + "films or shows, never categories such as \"Netflix thrillers\". Use \"\" rather than null.";
 
     private Gemini() {
     }
@@ -67,13 +72,15 @@ final class Gemini {
                                 + "\n\nThe owner said: " + spoken)))))
                 .put("generationConfig", new JSONObject().put("responseMimeType", "application/json")
                         .put("temperature", 0.4));
-        URL url = new URL("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent");
         IOException last = null;
         for (int attempt = 0; attempt < 3; attempt++) {
+            // A busy first model hands the later attempts to the fallback.
+            String use = attempt == 0 || !(last instanceof Busy) ? model : FALLBACK_MODEL;
+            URL url = new URL("https://generativelanguage.googleapis.com/v1beta/models/" + use + ":generateContent");
             HttpURLConnection c = (HttpURLConnection) url.openConnection();
             try {
                 c.setConnectTimeout(10000);
-                c.setReadTimeout(30000);
+                c.setReadTimeout(20000);
                 c.setRequestMethod("POST");
                 c.setDoOutput(true);
                 c.setRequestProperty("Content-Type", "application/json");
@@ -89,7 +96,7 @@ final class Gemini {
                     String msg = new JSONObject(text.isEmpty() ? "{}" : text).optJSONObject("error") == null ? ""
                             : new JSONObject(text).getJSONObject("error").optString("message");
                     if (status == 429 || status >= 500) {
-                        last = new IOException("Gemini is busy (" + status + ")");
+                        last = new Busy("Gemini is busy (" + status + ")");
                         continue;
                     }
                     throw new Refused("Gemini said: " + (msg.isEmpty() ? "error " + status : msg));
@@ -111,6 +118,13 @@ final class Gemini {
             }
         }
         throw last != null ? last : new IOException("No answer from Gemini");
+    }
+
+    /** The model is overloaded or rate-limited; another model may answer. */
+    private static final class Busy extends IOException {
+        Busy(String message) {
+            super(message);
+        }
     }
 
     /** An answer that retrying will not change. */

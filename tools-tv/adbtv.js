@@ -8,6 +8,8 @@
 //   node adbtv.js <host> theme <theme-folder>        push config.json and wallpapers/ to the launcher, restart Home
 //   node adbtv.js <host> tmdb-token <file>          give TV Discover its TMDB read token (from a local file)
 //   node adbtv.js <host> gemini-key <file> [model]   give Jarvis its Gemini API key (from a local file)
+//   node adbtv.js <host> key-service on|off          the launcher's remote-button helper (mic button -> Jarvis)
+//   node adbtv.js <host> grant-addons               runtime permissions for the add-ons (TV listings, mic)
 //   node adbtv.js <host> screenshot <out.png>       capture the TV screen (binary-safe exec: service)
 //   node adbtv.js <host> pull-state <out-file>      save enabled and disabled package lists to a file
 //
@@ -226,6 +228,27 @@ async function main() {
         + '-n com.gathin.tvjarvis/.KeyReceiver --es key ' + key + model);
       console.log(out.replace(key, '<key>').trim());
       process.stdout.write(await adb.shell('pm grant com.gathin.tvjarvis android.permission.RECORD_AUDIO && echo mic granted'));
+    } else if (verb === 'key-service') {
+      const svc = 'com.gathin.tvhome/com.gathin.tvhome.HomeKeyService';
+      const cur = (await adb.shell('settings get secure enabled_accessibility_services')).trim();
+      const list = cur && cur !== 'null' ? cur.split(':').filter((e) => e && e !== svc) : [];
+      if (args[0] === 'on') {
+        list.push(svc);
+        process.stdout.write(await adb.shell('settings put secure enabled_accessibility_services ' + list.join(':')
+          + '; settings put secure accessibility_enabled 1'
+          // Xiaomi stops a third-party launcher at boot, which drops its accessibility service; the
+          // notification listener is bound again afterwards and puts the helper back (GuardRevival).
+          + '; cmd notification allow_listener com.gathin.tvhome/com.gathin.tvhome.GuardRevival'
+          + '; settings get secure enabled_accessibility_services'));
+      } else {
+        process.stdout.write(await adb.shell('settings put secure enabled_accessibility_services "' + list.join(':') + '"'
+          + (list.length ? '' : '; settings put secure accessibility_enabled 0')
+          + '; cmd notification disallow_listener com.gathin.tvhome/com.gathin.tvhome.GuardRevival'
+          + '; settings get secure enabled_accessibility_services'));
+      }
+    } else if (verb === 'grant-addons') {
+      process.stdout.write(await adb.shell('pm grant com.gathin.tvdiscover android.permission.READ_TV_LISTINGS && echo tv-listings granted; '
+        + 'pm grant com.gathin.tvjarvis android.permission.RECORD_AUDIO && echo mic granted'));
     } else if (verb === 'screenshot') {
       const png = await adb.exec('screencap -p');
       if (png.subarray(1, 4).toString() !== 'PNG') throw new Error('not a PNG: ' + png.subarray(0, 80).toString());

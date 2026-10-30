@@ -61,5 +61,10 @@
   "ambient_glow": false,
   "clock_wallpaper": true,
   "clock_wallpaper_dim": 10,
-  "home_idle_clock_minutes": 10
+  "home_idle_clock_minutes": 10,
+  "app_keys": [
+    "84:com.gathin.tvjarvis/.JarvisActivity",
+    "231:com.gathin.tvjarvis/.JarvisActivity",
+    "219:com.gathin.tvjarvis/.JarvisActivity"
+  ]
 }

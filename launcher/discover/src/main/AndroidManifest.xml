@@ -3,6 +3,8 @@
 
     <!-- Titles and posters come from TMDB; this add-on holds the network so the launcher never needs it. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Continue watching (WatchNext): granted from the shell at install. -->
+    <uses-permission android:name="android.permission.READ_TV_LISTINGS" />
 
     <application
         android:label="TV Discover"

@@ -49,7 +49,10 @@ final class CardHome {
     private static final Uri WEATHER = Uri.parse("content://com.gathin.tvweather/current");
     private static final Uri FOR_YOU = Uri.parse("content://com.gathin.tvdiscover/for_you");
     private static final Uri QUEUE = Uri.parse("content://com.gathin.tvdiscover/queue");
+    private static final Uri CONTINUE = Uri.parse("content://com.gathin.tvdiscover/continue");
     private static final String DISCOVER_PKG = "com.gathin.tvdiscover";
+    /** The frosted backdrop is the screen behind the cards at 1/FROST size, blurred. */
+    private static final int FROST = 8;
     private static final long REFRESH_GAP_MS = 5 * 60 * 1000L;
 
     private final Activity activity;
@@ -66,6 +69,10 @@ final class CardHome {
     private final TextView swipeCount;
     private final ImageView[] swipeStack = new ImageView[2];
     private int posterW, posterH, posterSlots;
+    private TextView recentTitle;
+    /** Blurred copy of what is behind the cards; drawn by every card's Frost background. Main thread only. */
+    private android.graphics.Bitmap frost;
+    private final Runnable frostTask = this::captureFrost;
     private long lastRefresh;
 
     /** Returns the cards when the theme turns them on, otherwise null. They sit in the root just under {@code above}. */
@@ -192,7 +199,8 @@ final class CardHome {
 
         LinearLayout recent = card(rightX, bottomY, recentW, bottomH);
         recent.setPadding(px(24), px(14), px(24), px(10));
-        recent.addView(kicker("Recently opened"));
+        recentTitle = kicker("Recently opened");
+        recent.addView(recentTitle);
         recentRow = new LinearLayout(activity);
         recentRow.setGravity(Gravity.CENTER_VERTICAL);
         recent.addView(recentRow, new LinearLayout.LayoutParams(-1, 0, 1f));
@@ -230,6 +238,9 @@ final class CardHome {
     /** Called on every return to Home: rebuilds the recent row and, at most every few minutes, the weather. */
     void refresh() {
         buildRecent();
+        container.removeCallbacks(frostTask);
+        container.postDelayed(frostTask, 1200);
+        container.postDelayed(frostTask, 6000);
         new Thread(this::readDiscover, "card-discover").start();
         long now = System.currentTimeMillis();
         if (now - lastRefresh < REFRESH_GAP_MS) return;
@@ -343,7 +354,18 @@ final class CardHome {
         java.util.List<String[]> picks = new java.util.ArrayList<>();   // {title, pkg, poster uri}
         java.util.List<String> queuePosters = new java.util.ArrayList<>();
         int queued = 0;
+        java.util.List<String[]> resume = new java.util.ArrayList<>();   // {title, pkg, intent, progress, poster}
         if (installed) {
+            try (Cursor c = activity.getContentResolver().query(CONTINUE, null, null, null, null)) {
+                while (c != null && c.moveToNext() && resume.size() < 3) {
+                    resume.add(new String[]{c.getString(c.getColumnIndexOrThrow("title")),
+                            c.getString(c.getColumnIndexOrThrow("pkg")), c.getString(c.getColumnIndexOrThrow("intent")),
+                            String.valueOf(c.getInt(c.getColumnIndexOrThrow("progress"))),
+                            c.getString(c.getColumnIndexOrThrow("poster"))});
+                }
+            } catch (RuntimeException ignored) {
+                // No Continue watching yet (permission not granted, or nothing published).
+            }
             try (Cursor c = activity.getContentResolver().query(FOR_YOU, null, null, null, null)) {
                 while (c != null && c.moveToNext() && picks.size() < posterSlots) {
                     picks.add(new String[]{c.getString(c.getColumnIndexOrThrow("title")),
@@ -367,8 +389,13 @@ final class CardHome {
         for (int i = 0; i < art.length; i++) art[i] = decodePoster(picks.get(i)[2]);
         android.graphics.Bitmap[] stackArt = new android.graphics.Bitmap[queuePosters.size()];
         for (int i = 0; i < stackArt.length; i++) stackArt[i] = decodePoster(queuePosters.get(i));
+        android.graphics.Bitmap[] resumeArt = new android.graphics.Bitmap[resume.size()];
+        for (int i = 0; i < resumeArt.length; i++) resumeArt[i] = decodePoster(resume.get(i)[4]);
         final int count = queued;
-        activity.runOnUiThread(() -> showDiscover(installed, picks, art, stackArt, count));
+        activity.runOnUiThread(() -> {
+            showDiscover(installed, picks, art, stackArt, count);
+            showContinue(resume, resumeArt);
+        });
     }
 
     private void showDiscover(boolean installed, java.util.List<String[]> picks, android.graphics.Bitmap[] art,
@@ -396,6 +423,165 @@ final class CardHome {
             swipeStack[i].setVisibility(i < stackArt.length && stackArt[i] != null ? View.VISIBLE : View.INVISIBLE);
         }
         swipeCount.setText(!installed ? "Not installed" : queued > 0 ? queued + " to rate \u00b7 OK to start" : "OK to start");
+    }
+
+    /** Continue watching takes the bottom-left card when there is any; otherwise it keeps Recently opened. */
+    private void showContinue(java.util.List<String[]> rows, android.graphics.Bitmap[] art) {
+        if (rows.isEmpty()) {
+            recentTitle.setText("Recently opened");
+            return;
+        }
+        recentTitle.setText("Continue watching");
+        recentRow.removeAllViews();
+        for (int i = 0; i < rows.size(); i++) {
+            String[] r = rows.get(i);
+            LinearLayout item = new LinearLayout(activity);
+            item.setOrientation(LinearLayout.VERTICAL);
+            item.setPadding(px(4), px(4), px(4), px(4));
+            FrameLayout frame = new FrameLayout(activity);
+            ImageView image = posterView();
+            if (art[i] != null) image.setImageBitmap(art[i]);
+            frame.addView(image, new FrameLayout.LayoutParams(-1, -1));
+            int progress = Math.max(0, Math.min(100, Integer.parseInt(r[3])));
+            if (progress > 0) {
+                View bar = new View(activity);
+                bar.setBackgroundColor(0xFFE50914);
+                FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(px(66 - 8) * progress / 100, px(3),
+                        Gravity.BOTTOM | Gravity.START);
+                frame.addView(bar, blp);
+            }
+            item.addView(frame, new LinearLayout.LayoutParams(-1, px(38)));
+            TextView name = text(11, 0xCCFFFFFF, "sans-serif", 0.02f);
+            name.setSingleLine(true);
+            name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            name.setText(r[0]);
+            name.setGravity(Gravity.CENTER_HORIZONTAL);
+            LinearLayout.LayoutParams nameLp = new LinearLayout.LayoutParams(-1, -2);
+            nameLp.topMargin = px(4);
+            item.addView(name, nameLp);
+            makeFocusable(item, () -> openIntent(r[2], r[1]));
+            recentRow.addView(item, i == 0 ? first() : next());
+        }
+        recentHint.setVisibility(View.GONE);
+        recentRow.setVisibility(View.VISIBLE);
+    }
+
+    /** A Watch Next row's own intent, only if it really opens the app that published it. */
+    private void openIntent(String uri, String pkg) {
+        try {
+            Intent i = Intent.parseUri(uri, Intent.URI_INTENT_SCHEME);
+            i.setSelector(null);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            android.content.pm.ResolveInfo r = activity.getPackageManager().resolveActivity(i, 0);
+            if (r == null || !pkg.equals(r.activityInfo.packageName)) {
+                launch(pkg);
+                return;
+            }
+            LastOpened.record(activity, pkg);
+            activity.startActivity(i);
+        } catch (Exception e) {
+            launch(pkg);
+        }
+    }
+
+    /** Draws the screen behind the cards (cards hidden) at 1/FROST size and blurs it, for the Frost backgrounds. */
+    private void captureFrost() {
+        View root = (View) container.getParent();
+        int w = root.getWidth() / FROST, h = root.getHeight() / FROST;
+        if (w <= 0 || h <= 0) return;
+        android.graphics.Bitmap small;
+        try {
+            small = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888);
+        } catch (OutOfMemoryError e) {
+            return;
+        }
+        android.graphics.Canvas canvas = new android.graphics.Canvas(small);
+        canvas.scale(1f / FROST, 1f / FROST);
+        int was = container.getVisibility();
+        container.setVisibility(View.INVISIBLE);
+        try {
+            root.draw(canvas);
+        } catch (RuntimeException e) {
+            return;
+        } finally {
+            container.setVisibility(was);
+        }
+        blur(small, 3);
+        // The old bitmap is left to the garbage collector: a frame being drawn may still hold it.
+        frost = small;
+        for (int i = 0; i < container.getChildCount(); i++) container.getChildAt(i).invalidate();
+    }
+
+    /** Three box-blur passes each way: close to a Gaussian, and cheap at 1/8 screen size. */
+    private static void blur(android.graphics.Bitmap b, int radius) {
+        int w = b.getWidth(), h = b.getHeight();
+        int[] px = new int[w * h], tmp = new int[w * h];
+        b.getPixels(px, 0, w, 0, 0, w, h);
+        for (int pass = 0; pass < 3; pass++) {
+            box(px, tmp, w, h, radius, true);
+            box(tmp, px, w, h, radius, false);
+        }
+        b.setPixels(px, 0, w, 0, 0, w, h);
+    }
+
+    private static void box(int[] in, int[] out, int w, int h, int r, boolean horizontal) {
+        int len = horizontal ? w : h, lines = horizontal ? h : w;
+        for (int line = 0; line < lines; line++) {
+            for (int i = 0; i < len; i++) {
+                int sr = 0, sg = 0, sb = 0;
+                for (int k = -r; k <= r; k++) {
+                    int j = Math.min(len - 1, Math.max(0, i + k));
+                    int c = horizontal ? in[line * w + j] : in[j * w + line];
+                    sr += (c >> 16) & 255;
+                    sg += (c >> 8) & 255;
+                    sb += c & 255;
+                }
+                int n = 2 * r + 1;
+                int v = 0xFF000000 | ((sr / n) << 16) | ((sg / n) << 8) | (sb / n);
+                if (horizontal) out[line * w + i] = v;
+                else out[i * w + line] = v;
+            }
+        }
+    }
+
+    /** A card's background: the blurred screen behind it, clipped to the card's corners, under its tint and rim. */
+    private final class Frost extends Drawable {
+        private final int x, y;
+        private final GradientDrawable glass;
+        private final android.graphics.Path clip = new android.graphics.Path();
+        private final Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG);
+        private final android.graphics.Rect src = new android.graphics.Rect();
+
+        Frost(int x, int y, GradientDrawable glass) {
+            this.x = x;
+            this.y = y;
+            this.glass = glass;
+        }
+
+        @Override
+        protected void onBoundsChange(android.graphics.Rect b) {
+            glass.setBounds(b);
+            clip.reset();
+            clip.addRoundRect(new android.graphics.RectF(b), px(14), px(14), android.graphics.Path.Direction.CW);
+        }
+
+        @Override
+        public void draw(Canvas canvas) {
+            android.graphics.Bitmap f = frost;
+            if (f != null) {
+                android.graphics.Rect b = getBounds();
+                src.set(x / FROST, y / FROST, (x + b.width()) / FROST, (y + b.height()) / FROST);
+                canvas.save();
+                canvas.clipPath(clip);
+                canvas.drawBitmap(f, src, b, paint);
+                canvas.restore();
+            }
+            glass.draw(canvas);
+        }
+
+        @Override public void setAlpha(int alpha) { glass.setAlpha(alpha); }
+        @Override public void setColorFilter(android.graphics.ColorFilter cf) { glass.setColorFilter(cf); }
+        @Override public int getOpacity() { return android.graphics.PixelFormat.TRANSLUCENT; }
     }
 
     private android.graphics.Bitmap decodePoster(String uri) {
@@ -508,10 +694,10 @@ final class CardHome {
         LinearLayout c = new LinearLayout(activity);
         c.setOrientation(LinearLayout.VERTICAL);
         GradientDrawable fill = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{0x42FFFFFF, 0x16FFFFFF});
+                new int[]{0x3DFFFFFF, 0x12FFFFFF});
         fill.setCornerRadius(px(14));
-        fill.setStroke(Math.max(1, px(1)), 0x4DFFFFFF);
-        c.setBackground(fill);
+        fill.setStroke(Math.max(1, px(1)), 0x59FFFFFF);
+        c.setBackground(new Frost(x, y, fill));
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(w, h);
         lp.leftMargin = x;
         lp.topMargin = y;

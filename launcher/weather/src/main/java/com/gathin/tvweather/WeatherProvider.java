@@ -20,12 +20,14 @@ import java.nio.charset.StandardCharsets;
 /**
  * Current weather for one place, fetched by the TV itself from Open-Meteo (free, no key) and served read-only
  * to the launcher. A read refreshes it in the background when it is older than {@link #STALE_MS}; the launcher
- * can also ask with {@code call("refresh")}. Nothing is sent but the place's coordinates.
+ * can also ask with {@code call("refresh")}. The place is Pune until Jarvis sets another one with
+ * {@code call("set_place")}, which only Jarvis may do. Nothing is sent but the place's coordinates.
  */
 public class WeatherProvider extends ContentProvider {
-    static final String CITY = "Pune";
-    static final double LAT = 18.5204;
-    static final double LON = 73.8567;
+    private static final String DEFAULT_CITY = "Pune";
+    private static final float DEFAULT_LAT = 18.5204f;
+    private static final float DEFAULT_LON = 73.8567f;
+    private static final String JARVIS = "com.gathin.tvjarvis";
 
     private static final String PREFS = "weather";
     private static final long STALE_MS = 20 * 60 * 1000L;
@@ -44,18 +46,26 @@ public class WeatherProvider extends ContentProvider {
     public Cursor query(Uri uri, String[] projection, String selection, String[] selectionArgs, String sortOrder) {
         SharedPreferences sp = prefs();
         long updated = sp.getLong("updated", 0L);
-        if (System.currentTimeMillis() - updated > STALE_MS) refreshAsync();
+        if (System.currentTimeMillis() - updated > STALE_MS) refreshAsync(false);
         MatrixCursor cursor = new MatrixCursor(COLUMNS);
         if (updated > 0) {
-            cursor.addRow(new Object[]{sp.getFloat("temp", 0f), sp.getInt("code", 0), sp.getString("text", ""), CITY, updated,
-                    sp.getString("sunrise", "")});
+            cursor.addRow(new Object[]{sp.getFloat("temp", 0f), sp.getInt("code", 0), sp.getString("text", ""),
+                    sp.getString("city", DEFAULT_CITY), updated, sp.getString("sunrise", "")});
         }
         return cursor;
     }
 
     @Override
     public Bundle call(String method, String arg, Bundle extras) {
-        if ("refresh".equals(method)) refreshAsync();
+        if ("refresh".equals(method)) {
+            refreshAsync(false);
+        } else if ("set_place".equals(method)) {
+            // Only Jarvis may move the weather; any app may read it.
+            if (!JARVIS.equals(getCallingPackage()) || arg == null || extras == null) return null;
+            prefs().edit().putString("city", arg).putFloat("lat", (float) extras.getDouble("lat"))
+                    .putFloat("lon", (float) extras.getDouble("lon")).putLong("updated", 0L).apply();
+            refreshAsync(true);
+        }
         return Bundle.EMPTY;
     }
 
@@ -63,16 +73,24 @@ public class WeatherProvider extends ContentProvider {
         return getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
 
-    private synchronized void refreshAsync() {
+    private synchronized void refreshAsync(boolean force) {
         long now = System.currentTimeMillis();
-        if (fetching || now - lastAttempt < MIN_GAP_MS) return;
+        if (fetching || (!force && now - lastAttempt < MIN_GAP_MS)) return;
         fetching = true;
         lastAttempt = now;
         new Thread(() -> {
             try {
-                fetch();
-            } catch (Exception ignored) {
-                // Offline or the service is down: keep the last reading; the next read tries again.
+                for (int attempt = 0; attempt < 3; attempt++) {
+                    try {
+                        fetch();
+                        return;
+                    } catch (Exception e) {
+                        // Offline or the service is down: keep the last reading and try a little later.
+                        Thread.sleep(2000L * (attempt + 1));
+                    }
+                }
+            } catch (InterruptedException ignored) {
+                // Stopping: the next read tries again.
             } finally {
                 fetching = false;
             }
@@ -80,7 +98,9 @@ public class WeatherProvider extends ContentProvider {
     }
 
     private void fetch() throws Exception {
-        URL url = new URL("https://api.open-meteo.com/v1/forecast?latitude=" + LAT + "&longitude=" + LON
+        SharedPreferences sp = prefs();
+        float lat = sp.getFloat("lat", DEFAULT_LAT), lon = sp.getFloat("lon", DEFAULT_LON);
+        URL url = new URL("https://api.open-meteo.com/v1/forecast?latitude=" + lat + "&longitude=" + lon
                 + "&current=temperature_2m,weather_code&daily=sunrise&forecast_days=1&timezone=auto");
         HttpURLConnection c = (HttpURLConnection) url.openConnection();
         c.setConnectTimeout(10000);
@@ -96,7 +116,7 @@ public class WeatherProvider extends ContentProvider {
             JSONObject daily = json.optJSONObject("daily");
             String sunrise = daily == null ? "" : daily.getJSONArray("sunrise").optString(0, "");
             if (sunrise.length() >= 16) sunrise = sunrise.substring(11, 16);
-            prefs().edit().putFloat("temp", (float) cur.getDouble("temperature_2m")).putInt("code", code)
+            sp.edit().putFloat("temp", (float) cur.getDouble("temperature_2m")).putInt("code", code)
                     .putString("text", describe(code)).putString("sunrise", sunrise)
                     .putLong("updated", System.currentTimeMillis()).apply();
         } finally {

@@ -21,6 +21,7 @@ import android.os.Looper;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
+import android.speech.tts.TextToSpeech;
 import android.util.DisplayMetrics;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -36,6 +37,7 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Jarvis: listens through the remote's microphone, shows the words as they come, asks Gemini what to do and
@@ -52,6 +54,9 @@ public class JarvisActivity extends Activity {
     private TextView reply;
     private LinearLayout choices;
     private SpeechRecognizer recognizer;
+    /** Speaks each answer with the TV's own (offline) voice; null until it is ready, or when there is none. */
+    private TextToSpeech tts;
+    private boolean ttsReady;
     private float d;
 
     @Override
@@ -87,6 +92,7 @@ public class JarvisActivity extends Activity {
         keys.setText("OK  Ask again      Back  Close");
         col.addView(keys, centred(36));
         setContentView(root);
+        tts = new TextToSpeech(this, st -> ttsReady = st == TextToSpeech.SUCCESS);
 
         if (Gemini.key(this).isEmpty()) {
             showState("Not set up", "", "Add the Gemini key from the laptop, then try again.");
@@ -120,6 +126,7 @@ public class JarvisActivity extends Activity {
     // ---- listening -------------------------------------------------------------------------------
 
     private void listen() {
+        if (tts != null) tts.stop();
         choices.removeAllViews();
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_MIC);
@@ -217,11 +224,12 @@ public class JarvisActivity extends Activity {
 
     private void act(JSONObject a) {
         orb.setMode(OrbView.IDLE);
-        String action = a.optString("action");
-        String app = a.optString("app");
-        String query = a.optString("query");
+        String action = str(a, "action");
+        String app = str(a, "app");
+        String query = str(a, "query");
         status.setText("Jarvis");
-        reply.setText(a.optString("say"));
+        reply.setText(str(a, "say"));
+        speak(str(a, "say"));
         switch (action) {
             case "open_app":
                 if (!launch(app)) reply.setText("That app is not on this TV.");
@@ -232,9 +240,70 @@ public class JarvisActivity extends Activity {
             case "options":
                 showChoices(a.optJSONArray("options"));
                 break;
+            case "set_city":
+                setCity(str(a, "city"));
+                break;
             default:
                 break;
         }
+    }
+
+    /** optString turns a JSON null into the word "null"; models send null for empty fields. */
+    private static String str(JSONObject o, String key) {
+        return o.isNull(key) ? "" : o.optString(key, "");
+    }
+
+    /** Hindi in Devanagari gets the Hindi voice, everything else Indian English. */
+    private void speak(String text) {
+        if (!ttsReady || text == null || text.isEmpty()) return;
+        boolean hindi = text.codePoints().anyMatch(c -> c >= 0x0900 && c <= 0x097F);
+        Locale want = hindi ? new Locale("hi", "IN") : new Locale("en", "IN");
+        if (tts.isLanguageAvailable(want) >= TextToSpeech.LANG_AVAILABLE) tts.setLanguage(want);
+        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis");
+    }
+
+    /** Looks the city up (Open-Meteo geocoding, no key) and hands it to the TV Weather add-on. */
+    private void setCity(String city) {
+        if (city == null || city.trim().isEmpty()) return;
+        new Thread(() -> {
+            String msg;
+            try {
+                java.net.URL url = new java.net.URL("https://geocoding-api.open-meteo.com/v1/search?count=1&language=en&name="
+                        + java.net.URLEncoder.encode(city.trim(), "UTF-8"));
+                java.net.HttpURLConnection c = (java.net.HttpURLConnection) url.openConnection();
+                c.setConnectTimeout(10000);
+                c.setReadTimeout(10000);
+                String body;
+                try (java.io.InputStream in = c.getInputStream()) {
+                    java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+                    byte[] buf = new byte[4096];
+                    for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
+                    body = out.toString("UTF-8");
+                } finally {
+                    c.disconnect();
+                }
+                JSONArray results = new JSONObject(body).optJSONArray("results");
+                if (results == null || results.length() == 0) {
+                    msg = "I could not find " + city + ".";
+                } else {
+                    JSONObject place = results.getJSONObject(0);
+                    Bundle extras = new Bundle();
+                    extras.putDouble("lat", place.getDouble("latitude"));
+                    extras.putDouble("lon", place.getDouble("longitude"));
+                    Bundle ok = getContentResolver().call(android.net.Uri.parse("content://com.gathin.tvweather"),
+                            "set_place", place.getString("name"), extras);
+                    msg = ok == null ? "The weather app did not accept the change."
+                            : "Weather now shows " + place.getString("name") + ".";
+                }
+            } catch (Exception e) {
+                msg = "I could not change the city right now.";
+            }
+            final String m = msg;
+            handler.post(() -> {
+                reply.setText(m);
+                speak(m);
+            });
+        }, "jarvis-city").start();
     }
 
     private void showChoices(JSONArray options) {
@@ -243,9 +312,10 @@ public class JarvisActivity extends Activity {
         for (int i = 0; i < options.length() && i < 5; i++) {
             JSONObject o = options.optJSONObject(i);
             if (o == null) continue;
-            String title = o.optString("title"), app = o.optString("app");
+            String title = str(o, "title"), app = str(o, "app");
+            if (title.isEmpty()) continue;
             TextView card = label(17, 0xFFFFFFFF, "sans-serif-medium");
-            card.setText(title + "\n" + label(app) + (o.optString("why").isEmpty() ? "" : " · " + o.optString("why")));
+            card.setText(title + "\n" + label(app) + (str(o, "why").isEmpty() ? "" : " · " + str(o, "why")));
             card.setPadding((int) (20 * d), (int) (14 * d), (int) (20 * d), (int) (14 * d));
             card.setBackground(cardBackground());
             card.setFocusable(true);
@@ -345,6 +415,7 @@ public class JarvisActivity extends Activity {
     @Override
     protected void onDestroy() {
         if (recognizer != null) recognizer.destroy();
+        if (tts != null) tts.shutdown();
         orb.setMode(OrbView.IDLE);
         super.onDestroy();
     }
