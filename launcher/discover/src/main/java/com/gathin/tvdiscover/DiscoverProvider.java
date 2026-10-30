@@ -30,7 +30,7 @@ public class DiscoverProvider extends ContentProvider {
     private static final String[] COLUMNS = {"key", "title", "year", "genres", "service", "pkg", "poster"};
     private static final String[] CONTINUE = {"key", "title", "subtitle", "pkg", "intent", "progress", "poster", "engaged"};
     private static final String[] SHELF = {"key", "title", "subtitle", "pkg", "intent", "progress", "poster", "wide"};
-    /** priority: 2 India playing, 1 another international, 0 the rest; batting: 1 or 2 for the side in, else 0. */
+    /** priority: 3 India playing, 2 IPL, 1 another international, 0 the rest; batting: 1 or 2 for the side in, else 0. */
     private static final String[] CRICKET = {"team1", "score1", "team2", "score2", "batting", "priority"};
     private volatile boolean refreshing;
 

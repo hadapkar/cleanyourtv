@@ -253,7 +253,7 @@ final class CardHome {
         weatherRow.addView(weatherTemp);
         weatherRow.addView(weatherText, wtLp);
         leftCard.addView(weatherRow);
-        // India's match, when there is one: the score under the weather, kept current while Home is on screen.
+        // India's match, else an IPL one: the score under the weather, kept current while Home is on screen.
         cricketLine = text(15, 0xE6FFFFFF, "sans-serif-medium", 0.01f);
         cricketLine.setSingleLine(true);
         cricketLine.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -849,7 +849,7 @@ final class CardHome {
             boolean live = !"0".equals(m[4]);
             TextView tag = text(11, live ? 0xFFFF5A5F : 0x99FFFFFF, "sans-serif-medium", 0.15f);
             tag.setAllCaps(true);
-            tag.setText(live ? "● Live" : "2".equals(m[5]) ? "India" : "Recent");
+            tag.setText(live ? "● Live" : "3".equals(m[5]) ? "India" : "2".equals(m[5]) ? "IPL" : "Recent");
             tile.addView(tag);
             tile.addView(scoreRow(m[0], m[1], "1".equals(m[4])), rowLp(px(6)));
             tile.addView(scoreRow(m[2], m[3], "2".equals(m[4])), rowLp(px(4)));
@@ -998,14 +998,15 @@ final class CardHome {
         lastCricket = System.currentTimeMillis();
         new Thread(() -> {
             java.util.List<String[]> matches = readCricket();
-            String[] india = null;
+            // India's match, else an IPL match (priority 3, then 2; the list comes in that order).
+            String[] top = null;
             for (String[] m : matches) {
-                if ("2".equals(m[5])) {
-                    india = m;
+                if ("3".equals(m[5]) || "2".equals(m[5])) {
+                    top = m;
                     break;
                 }
             }
-            CharSequence line = india == null ? null : scoreLine(india);
+            CharSequence line = top == null ? null : scoreLine(top);
             activity.runOnUiThread(() -> {
                 cricketLine.setText(line);
                 cricketLine.setVisibility(line == null ? View.GONE : View.VISIBLE);

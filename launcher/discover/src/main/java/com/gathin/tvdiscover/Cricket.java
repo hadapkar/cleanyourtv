@@ -19,7 +19,7 @@ import java.util.Set;
 /**
  * Live and recent cricket scores from ESPNcricinfo's public RSS feed (no key; the feed asks for a refresh every
  * two minutes). Each item's title is "Team A 185/10 & 172/10 * v Team B 112/10", the star marking the side batting.
- * India's matches come first, then other internationals, then the rest, in the feed's order.
+ * India's matches come first, then the IPL, then other internationals, then the rest, in the feed's order.
  */
 final class Cricket {
     private static final String FEED = "https://static.cricinfo.com/rss/livescores.xml";
@@ -30,6 +30,11 @@ final class Cricket {
             "India", "Australia", "England", "South Africa", "New Zealand", "Pakistan", "Sri Lanka", "Bangladesh",
             "West Indies", "Afghanistan", "Zimbabwe", "Ireland", "Scotland", "Netherlands", "Nepal", "Oman",
             "United Arab Emirates", "Namibia", "United States of America", "USA", "Hong Kong", "Canada"));
+    /** IPL (and WPL, the same franchises): next after India. */
+    private static final Set<String> IPL = new HashSet<>(Arrays.asList(
+            "Mumbai Indians", "Chennai Super Kings", "Royal Challengers Bengaluru", "Royal Challengers Bangalore",
+            "Kolkata Knight Riders", "Sunrisers Hyderabad", "Rajasthan Royals", "Delhi Capitals", "Punjab Kings",
+            "Lucknow Super Giants", "Gujarat Titans", "Gujarat Giants", "UP Warriorz"));
 
     private static List<JSONObject> last = Collections.emptyList();
     private static long fetched, succeeded;
@@ -71,7 +76,7 @@ final class Cricket {
     }
 
     private static List<JSONObject> parse(List<String> titles) throws JSONException {
-        List<JSONObject> india = new ArrayList<>(), intl = new ArrayList<>(), rest = new ArrayList<>();
+        List<JSONObject> india = new ArrayList<>(), ipl = new ArrayList<>(), intl = new ArrayList<>(), rest = new ArrayList<>();
         for (String title : titles) {
             String[] sides = title.split("\\s+v\\s+", 2);
             if (sides.length != 2) continue;
@@ -81,11 +86,13 @@ final class Cricket {
             m.put("team1", a[0]).put("score1", a[1]).put("team2", b[0]).put("score2", b[1]);
             m.put("batting", !a[2].isEmpty() ? 1 : !b[2].isEmpty() ? 2 : 0);
             boolean ind = nation(a[0]).equals("India") || nation(b[0]).equals("India");
+            boolean league = IPL.contains(nation(a[0])) || IPL.contains(nation(b[0]));
             boolean both = NATIONS.contains(nation(a[0])) && NATIONS.contains(nation(b[0]));
-            m.put("priority", ind ? 2 : both ? 1 : 0);
-            (ind ? india : both ? intl : rest).add(m);
+            m.put("priority", ind ? 3 : league ? 2 : both ? 1 : 0);
+            (ind ? india : league ? ipl : both ? intl : rest).add(m);
         }
         List<JSONObject> out = new ArrayList<>(india);
+        out.addAll(ipl);
         out.addAll(intl);
         out.addAll(rest);
         return out;
