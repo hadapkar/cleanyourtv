@@ -730,7 +730,8 @@ final class CardHome {
             relayout(discoverOk, !recent.isEmpty(), jarvisOk);
             if (discoverOk) showDiscover(installed, picks, art, stackArt, count);
             showContinue(recent);
-            wireFocus();
+            // Columns are matched by on-screen position, so only once the new items are laid out.
+            container.post(this::wireFocus);
         });
     }
 
