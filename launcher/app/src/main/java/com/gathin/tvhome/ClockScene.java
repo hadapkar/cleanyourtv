@@ -93,6 +93,9 @@ final class ClockScene {
         ambient.setBackground(glow);
         ambient.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) ->
                 glow.setGradientRadius((r - l) * 0.55f));
+        content.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+            if (r - l != or - ol || b - t != ob - ot) v.post(this::keepOnScreen);
+        });
         colorIndex = random.nextInt(PALETTE.length);
         setGlow(PALETTE[colorIndex]);
     }
@@ -332,13 +335,40 @@ final class ClockScene {
         }).start();
     }
 
-    /** A random spot that keeps the whole clock on screen, with the glow centred behind it. */
+    /**
+     * Kept clear of each edge, as a share of the screen: TVs that overscan HDMI (a Bravia's default "Normal" display
+     * area) cut a few percent off every side.
+     */
+    private static final float SAFE = 0.05f;
+
+    /** A random spot that keeps the whole clock inside the safe area, with the glow centred behind it. */
     private void placeClock() {
         View parent = (View) content.getParent();
-        int maxX = Math.max(0, parent.getWidth() - content.getWidth());
-        int maxY = Math.max(0, parent.getHeight() - content.getHeight());
-        float x = maxX * (0.1f + 0.8f * random.nextFloat());
-        float y = maxY * (0.1f + 0.8f * random.nextFloat());
+        float mx = parent.getWidth() * SAFE, my = parent.getHeight() * SAFE;
+        float rangeX = Math.max(0, parent.getWidth() - 2 * mx - content.getWidth());
+        float rangeY = Math.max(0, parent.getHeight() - 2 * my - content.getHeight());
+        setClockAt(mx + rangeX * random.nextFloat(), my + rangeY * random.nextFloat());
+    }
+
+    /**
+     * The clock grew after it was placed (the weather chips arrive a moment later, "9:59" becomes "10:00"): moved
+     * back inside the safe area, or it ran off the bottom or right edge until the next minute.
+     */
+    private void keepOnScreen() {
+        View parent = (View) content.getParent();
+        if (parent == null || parent.getWidth() == 0) return;
+        float mx = parent.getWidth() * SAFE, my = parent.getHeight() * SAFE;
+        setClockAt(clamp(content.getX(), mx, parent.getWidth() - mx - content.getWidth()),
+                clamp(content.getY(), my, parent.getHeight() - my - content.getHeight()));
+    }
+
+    /** Within [lo, hi]; centred between them when the clock is bigger than the room. */
+    private static float clamp(float v, float lo, float hi) {
+        return hi < lo ? (lo + hi) / 2f : Math.max(lo, Math.min(hi, v));
+    }
+
+    private void setClockAt(float x, float y) {
+        View parent = (View) content.getParent();
         content.setX(x);
         content.setY(y);
         if (parent.getWidth() > 0 && parent.getHeight() > 0) {
