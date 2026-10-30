@@ -490,7 +490,7 @@ final class CardHome {
         container.setDescendantFocusability(away ? android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS
                 : android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS);
         container.animate().alpha(alpha).translationY(y).scaleX(scale).scaleY(scale).setDuration(away ? 420 : 360)
-                .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).start();
+                .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).withLayer().start();
     }
 
     /**
@@ -972,9 +972,10 @@ final class CardHome {
     private final class Frost extends Drawable {
         private final View owner;
         private final GradientDrawable glass;
-        private final android.graphics.Path clip = new android.graphics.Path();
-        private final Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG);
-        private final android.graphics.Rect src = new android.graphics.Rect();
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+        private final android.graphics.Matrix matrix = new android.graphics.Matrix();
+        private final android.graphics.RectF rect = new android.graphics.RectF();
+        private android.graphics.Bitmap shaded;
 
         Frost(View owner, GradientDrawable glass) {
             this.owner = owner;
@@ -984,21 +985,24 @@ final class CardHome {
         @Override
         protected void onBoundsChange(android.graphics.Rect b) {
             glass.setBounds(b);
-            clip.reset();
-            clip.addRoundRect(new android.graphics.RectF(b), px(14), px(14), android.graphics.Path.Direction.CW);
+            rect.set(b);
         }
 
         @Override
         public void draw(Canvas canvas) {
             android.graphics.Bitmap f = frost;
             if (f != null) {
-                android.graphics.Rect b = getBounds();
-                int x = owner.getLeft(), y = owner.getTop();
-                src.set(x / FROST, y / FROST, (x + b.width()) / FROST, (y + b.height()) / FROST);
-                canvas.save();
-                canvas.clipPath(clip);
-                canvas.drawBitmap(f, src, b, paint);
-                canvas.restore();
+                // The blurred screen as the fill of the rounded card: one draw, no clip path (which this TV's GPU
+                // renders slowly, and every card redrew it whenever one of them moved).
+                if (shaded != f) {
+                    shaded = f;
+                    paint.setShader(new android.graphics.BitmapShader(f, android.graphics.Shader.TileMode.CLAMP,
+                            android.graphics.Shader.TileMode.CLAMP));
+                }
+                matrix.setScale(FROST, FROST);
+                matrix.postTranslate(-owner.getLeft() + getBounds().left, -owner.getTop() + getBounds().top);
+                paint.getShader().setLocalMatrix(matrix);
+                canvas.drawRoundRect(rect, px(14), px(14), paint);
             }
             glass.draw(canvas);
         }
