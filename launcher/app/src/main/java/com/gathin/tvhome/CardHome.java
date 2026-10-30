@@ -492,6 +492,76 @@ final class CardHome {
                 .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).start();
     }
 
+    /**
+     * Apple TV moves focus along fixed rows; Android's nearest-view search jumped between cards unpredictably
+     * (Right from the clock could end on the gear). Two rows across the cards:
+     *   clock -> For you posters -> Swipe        (Right at the end stays put)
+     *   clock -> Continue items  -> Jarvis
+     * Up and Down keep the column between the rows; Down from the bottom row goes to the dock, Up from the top
+     * row to the header buttons (both left to Android: the dock and header are outside the cards).
+     */
+    private void wireFocus() {
+        java.util.List<View> top = new java.util.ArrayList<>(), bottom = new java.util.ArrayList<>();
+        if (forYouCard.getVisibility() == View.VISIBLE) {
+            for (int i = 0; i < forYouRow.getChildCount(); i++) if (forYouRow.getChildAt(i).isFocusable()) top.add(forYouRow.getChildAt(i));
+            if (swipeCard.getVisibility() == View.VISIBLE) top.add(swipeCard);
+        }
+        if (recentCard.getVisibility() == View.VISIBLE && recentRow.getVisibility() == View.VISIBLE) {
+            for (int i = 0; i < recentRow.getChildCount(); i++) if (recentRow.getChildAt(i).isFocusable()) bottom.add(recentRow.getChildAt(i));
+        }
+        if (jarvisCard.getVisibility() == View.VISIBLE) bottom.add(jarvisCard);
+        View clock = leftCardView;
+        for (View v : new View[]{clock}) idOf(v);
+        for (View v : top) idOf(v);
+        for (View v : bottom) idOf(v);
+        wireRow(clock, top);
+        wireRow(clock, bottom);
+        // The clock: Right into the top row (or the bottom row when there is no top row).
+        java.util.List<View> first = !top.isEmpty() ? top : bottom;
+        clock.setNextFocusRightId(first.isEmpty() ? clock.getId() : first.get(0).getId());
+        clock.setNextFocusLeftId(clock.getId());
+        // Columns: each top item goes Down to the bottom item nearest under it, and back Up.
+        for (View t : top) {
+            View b = nearestByX(t, bottom);
+            if (b != null) t.setNextFocusDownId(b.getId());
+        }
+        for (View b : bottom) {
+            View t = nearestByX(b, top);
+            if (t != null) b.setNextFocusUpId(t.getId());
+        }
+    }
+
+    /** Left and Right along one row, the clock before its first item and nothing after its last. */
+    private static void wireRow(View clock, java.util.List<View> row) {
+        for (int i = 0; i < row.size(); i++) {
+            View v = row.get(i);
+            v.setNextFocusLeftId(i == 0 ? clock.getId() : row.get(i - 1).getId());
+            v.setNextFocusRightId(i == row.size() - 1 ? v.getId() : row.get(i + 1).getId());
+        }
+    }
+
+    private static View nearestByX(View from, java.util.List<View> candidates) {
+        if (candidates.isEmpty()) return null;
+        int[] a = new int[2], b = new int[2];
+        from.getLocationOnScreen(a);
+        float cx = a[0] + from.getWidth() / 2f;
+        View best = null;
+        float bestD = Float.MAX_VALUE;
+        for (View c : candidates) {
+            c.getLocationOnScreen(b);
+            float d = Math.abs(b[0] + c.getWidth() / 2f - cx);
+            if (d < bestD) {
+                bestD = d;
+                best = c;
+            }
+        }
+        return best;
+    }
+
+    private static void idOf(View v) {
+        if (v.getId() == View.NO_ID) v.setId(View.generateViewId());
+    }
+
     /** One row of scroll in px, learnt from the first move into the rows (onGridScrolled). */
     private int rowStep;
 
@@ -660,6 +730,7 @@ final class CardHome {
             relayout(discoverOk, !recent.isEmpty(), jarvisOk);
             if (discoverOk) showDiscover(installed, picks, art, stackArt, count);
             showContinue(recent);
+            wireFocus();
         });
     }
 
