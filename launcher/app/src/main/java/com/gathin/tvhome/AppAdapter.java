@@ -192,11 +192,6 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private final boolean cinematic;
     /** Note each launch for the cinematic shelf's "Last opened" line or card home's recent card. */
     private final boolean recordOpens;
-    /**
-     * Until this uptime an app Home just opened is still starting: Cricfy and Cocoflix take about 8 s on a 1 GB
-     * Xiaomi, and a second or held OK meanwhile used to open App info. Cleared when Home resumes.
-     */
-    private long launchingUntil;
     /** tvos_focus: see Sheen. Static so Holder, a static class, can read it. */
     static boolean tvosFocus;
     /** Dock order (config.xml dock_apps, or a theme's config.json). */
@@ -519,11 +514,11 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             h.label.setVisibility(uniformTiles ? View.GONE : View.VISIBLE);
         }
         h.card.setOnClickListener(v -> {
-            if (android.os.SystemClock.uptimeMillis() < launchingUntil) return;
+            if (launching()) return;
             launch(e);
         });
         h.card.setOnLongClickListener(v -> {
-            if (android.os.SystemClock.uptimeMillis() < launchingUntil) return true;
+            if (launching()) return true;
             if (tileMenu) {
                 int pos = h.getBindingAdapterPosition();
                 if (pos != RecyclerView.NO_POSITION) listener.onTileLongPress(pos, v);
@@ -566,7 +561,6 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         }
         try {
             ctx.startActivity(i);
-            launchingUntil = android.os.SystemClock.uptimeMillis() + 10_000L;
             if (ctx instanceof MainActivity) ((MainActivity) ctx).showOpening(e.label);
             if (recordOpens) LastOpened.record(ctx, e.pkg);
             if (advancedEffects && !reducedMotion && ctx instanceof Activity) {
@@ -584,9 +578,9 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     int appCount() { return items.size(); }
 
-    /** Home is in front again: whatever was starting has started (or given up). */
-    void clearLaunching() {
-        launchingUntil = 0L;
+    /** An app opened from Home is still starting (MainActivity.launching). */
+    private boolean launching() {
+        return ctx instanceof MainActivity && ((MainActivity) ctx).launching();
     }
 
     boolean isLibraryAt(int position) { return showLibrary && position == items.size(); }

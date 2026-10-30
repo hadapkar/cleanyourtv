@@ -144,6 +144,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private boolean cardHomeChecked;
     /** "Opening Cricfy…": shown from the press until the app's window covers Home (onPause) or 10 s pass. */
     private TextView openingPill;
+    /**
+     * Until this uptime an app Home opened is still starting (about 8 s for some apps on a 1 GB TV). Tiles, cards
+     * and the library all check it, so a second or held OK meanwhile neither opens App info nor another app.
+     */
+    private long launchingUntil;
     private final Runnable hideOpeningTask = this::hideOpening;
     private WallpaperPlayer wallpaperPlayer;
     private GlassView glass;
@@ -1035,7 +1040,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         restartIdleClock();
         promptsPaused = false;
         if (grid.getAdapter() == null) grid.setAdapter(adapter);   // dropped by onTrimMemory
-        adapter.clearLaunching();
         hideOpening();
         if (!cardHomeChecked) {
             cardHomeChecked = true;
@@ -2365,11 +2369,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         openingPill.setAlpha(0f);
         openingPill.setVisibility(View.VISIBLE);
         openingPill.animate().alpha(1f).setDuration(180).start();
+        launchingUntil = android.os.SystemClock.uptimeMillis() + 10_000L;
         handler.removeCallbacks(hideOpeningTask);
         handler.postDelayed(hideOpeningTask, 10_000L);
     }
 
+    /** True while an app Home opened is still starting; see launchingUntil. */
+    boolean launching() {
+        return android.os.SystemClock.uptimeMillis() < launchingUntil;
+    }
+
     private void hideOpening() {
+        launchingUntil = 0L;
         handler.removeCallbacks(hideOpeningTask);
         if (openingPill != null) openingPill.setVisibility(View.GONE);
     }

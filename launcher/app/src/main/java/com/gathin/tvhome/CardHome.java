@@ -699,7 +699,11 @@ final class CardHome {
     private void makeFocusable(View v, Runnable onOk) {
         v.setFocusable(true);
         v.setClickable(true);
-        v.setOnClickListener(x -> onOk.run());
+        v.setOnClickListener(x -> {
+            // An app opened from Home is still starting: a second press would open another one.
+            if (activity instanceof MainActivity && ((MainActivity) activity).launching()) return;
+            onOk.run();
+        });
         if (tvos) {
             Sheen sheen = new Sheen();
             v.setForeground(sheen);
