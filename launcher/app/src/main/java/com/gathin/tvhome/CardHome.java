@@ -336,6 +336,17 @@ final class CardHome {
         swipeCard = swipe;
         recentCard = recent;
         jarvisCard = jarvis;
+        // Top shelf: one card over the whole right-hand area, shown in place of the cards while browsing the dock.
+        shelfCard = card(rightX, top, rightW, bottom - top);
+        shelfCard.setPadding(px(24), px(16), px(24), px(14));
+        shelfTitle = kicker("");
+        shelfCard.addView(shelfTitle);
+        shelfGrid = new LinearLayout(activity);
+        shelfGrid.setOrientation(LinearLayout.VERTICAL);
+        shelfGrid.setGravity(Gravity.CENTER_VERTICAL);
+        shelfCard.addView(shelfGrid, new LinearLayout.LayoutParams(-1, 0, 1f));
+        shelfCard.setVisibility(View.GONE);
+        container.getViewTreeObserver().addOnGlobalFocusChangeListener(this::onFocusMoved);
         weatherDivider = divider;
         weatherLine = weatherRow;
         gTop = top;
@@ -395,6 +406,8 @@ final class CardHome {
             recentItemW = (inner - (recentSlots - 1) * px(10)) / recentSlots;
             recentImgH = Math.min(recentItemW * 9 / 16, bottomH - px(14 + 10) - px(24) - px(22));
         }
+        // A card brought back here stays under the top shelf while it is open.
+        if (shelfShown) cover();
         // The frosted backdrops follow their cards to their new places.
         container.removeCallbacks(frostTask);
         container.postDelayed(frostTask, 400);
@@ -564,6 +577,288 @@ final class CardHome {
 
     private static void idOf(View v) {
         if (v.getId() == View.NO_ID) v.setId(View.generateViewId());
+    }
+
+    // ---- top shelf ----------------------------------------------------------------------------------
+
+    private static final Uri SHELF = Uri.parse("content://com.gathin.tvdiscover/shelf");
+    private static final long SHELF_FRESH_MS = 10 * 60 * 1000L;
+    private LinearLayout shelfCard, shelfGrid;
+    private TextView shelfTitle;
+    /** The dock tile the shelf belongs to, the last dock tile focused, and what focus came from last. */
+    private View shelfTile, lastDockTile, focusFrom;
+    /** The tile whose Up was pointed into the shelf (reset when the shelf closes or moves on). */
+    private View pointedTile;
+    private String shelfPkg, shelfWant;
+    private CharSequence shelfLabel = "";
+    private boolean shelfShown;
+    private final java.util.List<View> covered = new java.util.ArrayList<>();
+    private final Runnable shelfTask = this::loadShelf;
+    private final java.util.concurrent.ExecutorService shelfLoader = java.util.concurrent.Executors.newSingleThreadExecutor();
+    /** A few apps' shelves, so moving back along the dock shows them at once. Main thread only. */
+    private final java.util.Map<String, ShelfData> shelfCache = new java.util.LinkedHashMap<String, ShelfData>(8, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(java.util.Map.Entry<String, ShelfData> eldest) {
+            return size() > 4;
+        }
+    };
+
+    private static final class ShelfData {
+        final long at = System.currentTimeMillis();
+        final java.util.List<String[]> rows = new java.util.ArrayList<>();   // {title, intent}
+        final java.util.List<android.graphics.Bitmap> art = new java.util.ArrayList<>();
+        boolean wide = true;
+    }
+
+    private void onFocusMoved(View old, View now) {
+        focusFrom = old;
+        if (shelfShown || shelfWant != null) container.post(this::checkShelfFocus);
+    }
+
+    /** Focus left both the shelf and its dock tile (the clock, the header, the rows below): the cards come back. */
+    private void checkShelfFocus() {
+        View f = activity.getCurrentFocus();
+        if (f == null || f == shelfTile || inside(f, shelfCard)) return;
+        hideShelf();
+    }
+
+    private static boolean inside(View v, View group) {
+        for (View p = v; p != null; p = p.getParent() instanceof View ? (View) p.getParent() : null) {
+            if (p == group) return true;
+        }
+        return false;
+    }
+
+    /**
+     * A dock tile took focus. As on Apple TV, the area above shows what that app offers, from the rows it publishes
+     * to Android TV. Only while browsing the dock (focus came from another dock tile or from the shelf): opening
+     * Home or coming down from the cards keeps the cards. An app that publishes nothing keeps them too.
+     */
+    void showShelf(String pkg, CharSequence label, View tile) {
+        boolean moved = focusFrom != null && focusFrom != tile && (focusFrom == lastDockTile || inside(focusFrom, shelfCard));
+        lastDockTile = tile;
+        if (pkg == null || shelfAway || personalize != null && personalize.isOpen()) {
+            hideShelf();
+            return;
+        }
+        if (shelfShown && pkg.equals(shelfPkg)) {
+            shelfTile = tile;
+            pointUp();
+            return;
+        }
+        if (!moved && !shelfShown) return;
+        shelfTile = tile;
+        shelfWant = pkg;
+        shelfLabel = label;
+        container.removeCallbacks(shelfTask);
+        // A short rest first, so sliding along the dock does not flash every app's shelf.
+        container.postDelayed(shelfTask, 300);
+    }
+
+    private void loadShelf() {
+        String pkg = shelfWant;
+        if (pkg == null) return;
+        ShelfData cached = shelfCache.get(pkg);
+        if (cached != null && System.currentTimeMillis() - cached.at < SHELF_FRESH_MS) {
+            applyShelf(pkg, cached);
+            return;
+        }
+        shelfLoader.execute(() -> {
+            ShelfData data;
+            try {
+                data = readShelf(pkg);
+            } catch (RuntimeException | OutOfMemoryError e) {
+                data = new ShelfData();
+            }
+            ShelfData d = data;
+            activity.runOnUiThread(() -> {
+                shelfCache.put(pkg, d);
+                if (pkg.equals(shelfWant)) applyShelf(pkg, d);
+            });
+        });
+    }
+
+    /** The app's rows from TV Discover, with their artwork; a row without artwork is left out. Off the main thread. */
+    private ShelfData readShelf(String pkg) {
+        ShelfData s = new ShelfData();
+        if (!installed(DISCOVER_PKG)) return s;
+        java.util.List<String[]> rows = new java.util.ArrayList<>();   // {title, intent, poster}
+        try (Cursor c = activity.getContentResolver().query(Uri.withAppendedPath(SHELF, pkg), null, null, null, null)) {
+            while (c != null && c.moveToNext()) {
+                if (rows.isEmpty()) s.wide = c.getInt(c.getColumnIndexOrThrow("wide")) == 1;
+                rows.add(new String[]{c.getString(c.getColumnIndexOrThrow("title")),
+                        c.getString(c.getColumnIndexOrThrow("intent")), c.getString(c.getColumnIndexOrThrow("poster"))});
+            }
+        } catch (RuntimeException ignored) {
+            // An older TV Discover without the shelf, or not answering: no shelf.
+        }
+        int max = s.wide ? 6 : 5;
+        for (String[] r : rows) {
+            if (s.rows.size() >= max) break;
+            android.graphics.Bitmap b = decodePoster(r[2]);
+            if (b == null) continue;
+            s.rows.add(new String[]{r[0], r[1]});
+            s.art.add(b);
+        }
+        return s;
+    }
+
+    private void applyShelf(String pkg, ShelfData data) {
+        shelfWant = null;
+        if (data.rows.isEmpty()) {
+            hideShelf();
+            return;
+        }
+        if (shelfTile == null || !shelfTile.isFocused()) return;
+        shelfPkg = pkg;
+        shelfTitle.setText(shelfLabel);
+        fillShelf(pkg, data);
+        shelfCard.setDescendantFocusability(android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS);
+        if (!shelfShown) {
+            shelfShown = true;
+            cover();
+            shelfCard.animate().cancel();
+            shelfCard.setVisibility(View.VISIBLE);
+            shelfCard.setAlpha(0f);
+            shelfCard.animate().alpha(1f).setDuration(280)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).start();
+            // The frost under the shelf: what is behind it is the same wallpaper as behind the cards.
+            container.removeCallbacks(frostTask);
+            container.postDelayed(frostTask, 400);
+        } else {
+            shelfGrid.setAlpha(0f);
+            shelfGrid.animate().alpha(1f).setDuration(200).start();
+        }
+        pointUp();
+    }
+
+    /**
+     * Landscape rows (most apps' channels) as two rows of three, posters as one row of five, each sized to fit the
+     * card. OK opens the row's own intent in its app, as the Continue card does.
+     */
+    private void fillShelf(String pkg, ShelfData data) {
+        shelfGrid.removeAllViews();
+        int innerW = gRightW - px(48), innerH = gBottom - gTop - px(16 + 14) - px(24);
+        int nameH = px(26), gapX = px(14), gapY = px(12);
+        int cols, w, h;
+        if (data.wide) {
+            cols = 3;
+            w = (innerW - (cols - 1) * gapX) / cols - px(8);
+            h = w * 9 / 16;
+            int lines = data.rows.size() > cols ? 2 : 1;
+            int fit = (innerH - (lines - 1) * gapY) / lines - nameH - px(8);
+            if (h > fit) {
+                h = fit;
+                w = h * 16 / 9;
+            }
+        } else {
+            cols = 5;
+            w = Math.min((innerW - (cols - 1) * gapX) / cols - px(8), (innerH - nameH - px(8)) * 2 / 3);
+            h = w * 3 / 2;
+        }
+        LinearLayout line = null;
+        for (int i = 0; i < data.rows.size(); i++) {
+            if (i % cols == 0) {
+                line = new LinearLayout(activity);
+                line.setGravity(Gravity.CENTER_VERTICAL);
+                line.setClipChildren(false);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+                if (i > 0) lp.topMargin = gapY;
+                shelfGrid.addView(line, lp);
+            }
+            String[] r = data.rows.get(i);
+            LinearLayout item = new LinearLayout(activity);
+            item.setOrientation(LinearLayout.VERTICAL);
+            item.setPadding(px(4), px(4), px(4), px(4));
+            ImageView image = posterView();
+            image.setImageBitmap(data.art.get(i));
+            item.addView(image, new LinearLayout.LayoutParams(w, h));
+            TextView name = text(12, 0xCCFFFFFF, "sans-serif", 0.02f);
+            name.setSingleLine(true);
+            name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            name.setText(r[0]);
+            name.setGravity(Gravity.CENTER_HORIZONTAL);
+            LinearLayout.LayoutParams nameLp = new LinearLayout.LayoutParams(w, -2);
+            nameLp.topMargin = px(4);
+            item.addView(name, nameLp);
+            item.setContentDescription(r[0]);
+            makeFocusable(item, () -> openIntent(r[1], pkg), true);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+            if (i % cols > 0) lp.leftMargin = gapX;
+            line.addView(item, lp);
+        }
+    }
+
+    /** Up from the dock tile goes into the shelf, to the item above it (Android's own search could pick the clock). */
+    private void pointUp() {
+        container.post(() -> {
+            if (!shelfShown || shelfTile == null || shelfGrid.getChildCount() == 0) return;
+            // The shelf's bottom line, the one next to the dock.
+            java.util.List<View> nearLine = new java.util.ArrayList<>();
+            android.view.ViewGroup line = (android.view.ViewGroup) shelfGrid.getChildAt(shelfGrid.getChildCount() - 1);
+            for (int i = 0; i < line.getChildCount(); i++) nearLine.add(line.getChildAt(i));
+            View target = nearestByX(shelfTile, nearLine);
+            if (target == null) return;
+            idOf(target);
+            if (pointedTile != null && pointedTile != shelfTile) pointedTile.setNextFocusUpId(View.NO_ID);
+            shelfTile.setNextFocusUpId(target.getId());
+            pointedTile = shelfTile;
+        });
+    }
+
+    /** The cards under the shelf fade out and take no focus while it is open. */
+    private void cover() {
+        covered.clear();
+        for (View v : new View[]{forYouCard, swipeCard, recentCard, jarvisCard}) {
+            if (v.getVisibility() != View.VISIBLE) continue;
+            covered.add(v);
+            v.animate().cancel();
+            v.animate().alpha(0f).setDuration(200).withEndAction(() -> {
+                if (shelfShown) v.setVisibility(View.INVISIBLE);
+            }).start();
+        }
+    }
+
+    private void uncover() {
+        for (View v : new View[]{forYouCard, swipeCard, recentCard, jarvisCard}) {
+            v.animate().cancel();
+            if (v.getVisibility() == View.INVISIBLE) v.setVisibility(View.VISIBLE);
+            if (v.getVisibility() == View.VISIBLE) v.animate().alpha(1f).setDuration(260).start();
+            else v.setAlpha(1f);
+        }
+        covered.clear();
+    }
+
+    /** Back to the cards: focus went elsewhere, or the dock app has nothing to show. */
+    void hideShelf() {
+        container.removeCallbacks(shelfTask);
+        shelfWant = null;
+        if (pointedTile != null) {
+            pointedTile.setNextFocusUpId(View.NO_ID);
+            pointedTile = null;
+        }
+        if (!shelfShown) return;
+        shelfShown = false;
+        shelfPkg = null;
+        shelfCard.setDescendantFocusability(android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+        shelfCard.animate().cancel();
+        shelfCard.animate().alpha(0f).setDuration(180).withEndAction(() -> {
+            if (!shelfShown) shelfCard.setVisibility(View.GONE);
+        }).start();
+        uncover();
+        container.post(this::wireFocus);
+    }
+
+    /** Back with the shelf open: from inside it, to its dock tile; on the dock tile, closes it. */
+    boolean backFromShelf() {
+        if (!shelfShown) return false;
+        View f = activity.getCurrentFocus();
+        if (f != null && inside(f, shelfCard) && shelfTile != null && shelfTile.isAttachedToWindow()) {
+            shelfTile.requestFocus();
+            return true;
+        }
+        hideShelf();
+        return true;
     }
 
     /** One row of scroll in px, learnt from the first move into the rows (onGridScrolled). */

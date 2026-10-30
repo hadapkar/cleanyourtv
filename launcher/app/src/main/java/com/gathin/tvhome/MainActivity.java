@@ -1822,6 +1822,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     public void onBackPressed() {
         if (cardHome != null && cardHome.closePanel()) return;
+        if (cardHome != null && cardHome.backFromShelf()) return;
         // Home screen: Back goes nowhere.
     }
 
@@ -1931,7 +1932,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 else grid.smoothScrollBy(0, dy);
             }
             showHero(position, scroll ? r.top - dy : r.top);
+            if (cardHome != null) cardHome.showShelf(adapter.packageAt(position), adapter.labelAt(position), card);
         } else {
+            if (cardHome != null) cardHome.hideShelf();
             // Below the dock (or in a plain grid) the glow follows the tile without the big name; letting it
             // fade out left the grid on plain black.
             showGlowOnly(position);

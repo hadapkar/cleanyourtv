@@ -20,6 +20,7 @@ import java.util.List;
  *   <li>{@code content://com.gathin.tvdiscover/for_you}: the best matches, one row per title;</li>
  *   <li>{@code content://com.gathin.tvdiscover/queue}: titles not rated yet (for the Swipe card's count);</li>
  *   <li>{@code content://com.gathin.tvdiscover/continue}: Android TV's Continue watching rows (see WatchNext);</li>
+ *   <li>{@code content://com.gathin.tvdiscover/shelf/<package>}: that app's own rows, for Home's top shelf (Shelf);</li>
  *   <li>{@code content://com.gathin.tvdiscover/poster/<key>}: the title's poster as an image file.</li>
  * </ul>
  * A read starts a background refresh when the list is older than {@link Catalog#REFRESH_MS}.
@@ -27,6 +28,7 @@ import java.util.List;
 public class DiscoverProvider extends ContentProvider {
     private static final String[] COLUMNS = {"key", "title", "year", "genres", "service", "pkg", "poster"};
     private static final String[] CONTINUE = {"key", "title", "subtitle", "pkg", "intent", "progress", "poster", "engaged"};
+    private static final String[] SHELF = {"key", "title", "subtitle", "pkg", "intent", "progress", "poster", "wide"};
     private volatile boolean refreshing;
 
     @Override
@@ -37,6 +39,17 @@ public class DiscoverProvider extends ContentProvider {
     @Override
     public Cursor query(Uri uri, String[] projection, String selection, String[] selectionArgs, String sortOrder) {
         String what = uri.getLastPathSegment();
+        List<String> seg = uri.getPathSegments();
+        if (seg.size() == 2 && "shelf".equals(seg.get(0))) {
+            MatrixCursor c = new MatrixCursor(SHELF);
+            for (JSONObject t : Shelf.read(getContext(), seg.get(1), 10)) {
+                String key = t.optString("key");
+                c.addRow(new Object[]{key, t.optString("title"), t.optString("subtitle"), t.optString("pkg"),
+                        t.optString("intent"), t.optInt("progress"), "content://com.gathin.tvdiscover/poster/" + key,
+                        t.optBoolean("wide", true) ? 1 : 0});
+            }
+            return c;
+        }
         if ("continue".equals(what)) {
             MatrixCursor c = new MatrixCursor(CONTINUE);
             for (JSONObject t : WatchNext.read(getContext(), 6)) {
@@ -68,8 +81,12 @@ public class DiscoverProvider extends ContentProvider {
         if (seg.size() != 2 || !"poster".equals(seg.get(0))) throw new FileNotFoundException(uri.toString());
         String key = seg.get(1);
         File f;
-        if (key.startsWith("wn:")) {
+        if (key.startsWith("pp:")) {
+            JSONObject row = Shelf.find(key);
+            f = row == null ? null : WatchNext.poster(getContext(), row);
+        } else if (key.startsWith("wn:")) {
             JSONObject row = WatchNext.find(getContext(), key);
+            if (row == null) row = Shelf.find(key);   // a shelf row past the Continue card's six
             f = row == null ? null : WatchNext.poster(getContext(), row);
         } else {
             JSONObject t = Catalog.find(getContext(), key);
