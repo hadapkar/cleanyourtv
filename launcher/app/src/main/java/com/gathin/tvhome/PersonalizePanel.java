@@ -40,6 +40,7 @@ final class PersonalizePanel {
     private FrameLayout overlay;
     private TextView status;
     private EditText nameField, cityField;
+    private View doneButton;
     private String nameAtOpen = "", cityAtOpen = "";
     /** Root children whose focus was blocked while the panel is open, with what they had. */
     private final java.util.Map<android.view.ViewGroup, Integer> blocked = new java.util.HashMap<>();
@@ -76,7 +77,7 @@ final class PersonalizePanel {
         title.setText("Personalize");
         card.addView(title);
         TextView sub = text(14, 0x99FFFFFF, "sans-serif");
-        sub.setText("OK to edit, then OK again on the keyboard to save");
+        sub.setText("OK to edit \u00b7 Done saves \u00b7 Back cancels");
         card.addView(sub, margins(4));
 
         EditText name = field("Greeting name", host.greetingName(), card, InputType.TYPE_TEXT_FLAG_CAP_WORDS);
@@ -85,42 +86,17 @@ final class PersonalizePanel {
         cityField = city;
         nameAtOpen = host.greetingName();
         cityAtOpen = host.city();
+        // The keyboard's OK only moves on (name, then city, then Done); nothing is kept until Done.
         name.setOnEditorActionListener((v, action, e) -> {
             if (!isDone(action, e)) return false;
-            host.setGreetingName(v.getText().toString().trim());
-            nameAtOpen = v.getText().toString().trim();
-            say("Greeting saved");
             hideKeyboard(v);
             city.requestFocus();
             return true;
         });
         city.setOnEditorActionListener((v, action, e) -> {
             if (!isDone(action, e)) return false;
-            String wanted = v.getText().toString().trim();
             hideKeyboard(v);
-            if (wanted.isEmpty()) return true;
-            cityAtOpen = wanted;
-            say("Looking up " + wanted + "…");
-            new Thread(() -> {
-                String found = null;
-                try {
-                    Bundle out = activity.getContentResolver().call(WEATHER, "set_city", wanted, null);
-                    found = out == null ? null : out.getString("city");
-                } catch (RuntimeException ignored) {
-                    // No weather add-on.
-                }
-                final String f = found;
-                activity.runOnUiThread(() -> {
-                    if (overlay == null) return;
-                    if (f == null) {
-                        say("Couldn't find " + wanted);
-                    } else {
-                        v.setText(f);
-                        say("Weather now shows " + f);
-                        host.cityChanged();
-                    }
-                });
-            }, "personalize-city").start();
+            if (doneButton != null) doneButton.requestFocus();
             return true;
         });
 
@@ -132,12 +108,13 @@ final class PersonalizePanel {
         done.setPadding(px(18), px(12), px(18), px(12));
         done.setBackground(rowBackground());
         done.setFocusable(true);
-        done.setOnClickListener(v -> close());
+        done.setOnClickListener(v -> close(true));
+        doneButton = done;
         card.addView(done, margins(14));
 
         overlay.setOnKeyListener((v, keyCode, event) -> {
             if (keyCode == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) {
-                close();
+                close(false);
                 return true;
             }
             return false;
@@ -145,7 +122,7 @@ final class PersonalizePanel {
         for (View v : new View[]{name, city, done}) {
             v.setOnKeyListener((view, keyCode, event) -> {
                 if (keyCode == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) {
-                    close();
+                    close(false);
                     return true;
                 }
                 return false;
@@ -170,9 +147,15 @@ final class PersonalizePanel {
         name.requestFocus();
     }
 
+    /** Back on Home cancels, like Back inside the panel. */
     void close() {
+        close(false);
+    }
+
+    /** save: Done keeps what was typed; Back (save false) leaves everything as it was. */
+    void close(boolean save) {
         if (overlay == null) return;
-        saveChanges();
+        if (save) saveChanges();
         for (java.util.Map.Entry<android.view.ViewGroup, Integer> e : blocked.entrySet()) {
             e.getKey().setDescendantFocusability(e.getValue());
         }
@@ -183,7 +166,7 @@ final class PersonalizePanel {
         o.animate().alpha(0f).setDuration(160).withEndAction(() -> root.removeView(o)).start();
     }
 
-    /** Done or Back keeps what was typed: a new name at once, a new city looked up by TV Weather. */
+    /** Done keeps what was typed: a new name at once, a new city looked up by TV Weather. */
     private void saveChanges() {
         String name = nameField == null ? nameAtOpen : nameField.getText().toString().trim();
         if (!name.equals(nameAtOpen)) host.setGreetingName(name);
