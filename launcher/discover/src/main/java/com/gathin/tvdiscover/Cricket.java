@@ -38,6 +38,13 @@ final class Cricket {
 
     private static List<JSONObject> last = Collections.emptyList();
     private static long fetched, succeeded;
+    /**
+     * The feed's star stays on the last side to bat after a match ends, so it cannot say what is live. A match is
+     * live when its score changed within this long; each match's last score and when it changed are kept here.
+     */
+    private static final long LIVE_MS = 15 * 60 * 1000L;
+    private static final java.util.Map<String, String> lastScore = new java.util.HashMap<>();
+    private static final java.util.Map<String, Long> changedAt = new java.util.HashMap<>();
 
     private Cricket() {
     }
@@ -85,6 +92,13 @@ final class Cricket {
             JSONObject m = new JSONObject();
             m.put("team1", a[0]).put("score1", a[1]).put("team2", b[0]).put("score2", b[1]);
             m.put("batting", !a[2].isEmpty() ? 1 : !b[2].isEmpty() ? 2 : 0);
+            // First sight of a match says nothing about it being live; a change of score since does.
+            String key = a[0] + "|" + b[0], scores = a[1] + "|" + b[1];
+            String before = lastScore.put(key, scores);
+            long now = System.currentTimeMillis();
+            if (before != null && !before.equals(scores)) changedAt.put(key, now);
+            Long changed = changedAt.get(key);
+            m.put("live", changed != null && now - changed < LIVE_MS ? 1 : 0);
             boolean ind = nation(a[0]).equals("India") || nation(b[0]).equals("India");
             boolean league = IPL.contains(nation(a[0])) || IPL.contains(nation(b[0]));
             boolean both = NATIONS.contains(nation(a[0])) && NATIONS.contains(nation(b[0]));

@@ -846,19 +846,53 @@ final class CardHome {
                     outline.setRoundRect(0, 0, v.getWidth(), v.getHeight(), px(10));
                 }
             });
-            boolean live = !"0".equals(m[4]);
+            boolean live = "1".equals(m[6]);
             TextView tag = text(11, live ? 0xFFFF5A5F : 0x99FFFFFF, "sans-serif-medium", 0.15f);
             tag.setAllCaps(true);
             tag.setText(live ? "● Live" : "3".equals(m[5]) ? "India" : "2".equals(m[5]) ? "IPL" : "Recent");
             tile.addView(tag);
-            tile.addView(scoreRow(m[0], m[1], "1".equals(m[4])), rowLp(px(6)));
-            tile.addView(scoreRow(m[2], m[3], "2".equals(m[4])), rowLp(px(4)));
+            // A tile is a third of the card: short names, and a Test's current innings only.
+            tile.addView(scoreRow(shortTeam(m[0]), currentInnings(m[1]), "1".equals(m[4])), rowLp(px(6)));
+            tile.addView(scoreRow(shortTeam(m[2]), currentInnings(m[3]), "2".equals(m[4])), rowLp(px(4)));
             tile.setContentDescription(m[0] + " " + m[1] + " versus " + m[2] + " " + m[3]);
             makeFocusable(tile, () -> launch(pkg), false);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(w, h);
             if (i % cols > 0) lp.leftMargin = gapX;
             line.addView(tile, lp);
         }
+    }
+
+    /** Broadcasters' short names for the international sides and the IPL; others keep their name. */
+    private static final java.util.Map<String, String> SHORT = new java.util.HashMap<>();
+
+    static {
+        String[] pairs = {"India", "IND", "Pakistan", "PAK", "Australia", "AUS", "England", "ENG", "South Africa", "SA",
+                "New Zealand", "NZ", "Sri Lanka", "SL", "Bangladesh", "BAN", "West Indies", "WI", "Afghanistan", "AFG",
+                "Zimbabwe", "ZIM", "Ireland", "IRE", "Scotland", "SCO", "Netherlands", "NED", "Nepal", "NEP",
+                "Oman", "OMA", "United Arab Emirates", "UAE", "Namibia", "NAM", "Hong Kong", "HK", "Canada", "CAN",
+                "United States of America", "USA", "Mumbai Indians", "MI", "Chennai Super Kings", "CSK",
+                "Royal Challengers Bengaluru", "RCB", "Royal Challengers Bangalore", "RCB", "Kolkata Knight Riders", "KKR",
+                "Sunrisers Hyderabad", "SRH", "Rajasthan Royals", "RR", "Delhi Capitals", "DC", "Punjab Kings", "PBKS",
+                "Lucknow Super Giants", "LSG", "Gujarat Titans", "GT", "Gujarat Giants", "GG", "UP Warriorz", "UPW"};
+        for (int i = 0; i < pairs.length; i += 2) SHORT.put(pairs[i], pairs[i + 1]);
+    }
+
+    /** "India Women" becomes "IND W", "India A" "IND A". */
+    private static String shortTeam(String team) {
+        String base = team, suffix = "";
+        java.util.regex.Matcher mm = java.util.regex.Pattern.compile("^(.*?)\\s+(Women|A|U19|Under-19)$").matcher(team);
+        if (mm.matches()) {
+            base = mm.group(1);
+            suffix = mm.group(2).equals("Women") ? " W" : " " + mm.group(2).replace("Under-19", "U19");
+        }
+        String s = SHORT.get(base);
+        return s == null ? team : s + suffix;
+    }
+
+    /** "79/6 & 272/10" -> "272/10": the innings now being played, or the last one. */
+    private static String currentInnings(String score) {
+        int amp = score.lastIndexOf('&');
+        return amp < 0 ? score : score.substring(amp + 1).trim();
     }
 
     private static LinearLayout.LayoutParams rowLp(int top) {
@@ -984,9 +1018,11 @@ final class CardHome {
         java.util.List<String[]> out = new java.util.ArrayList<>();
         if (!installed(DISCOVER_PKG)) return out;
         try (Cursor c = activity.getContentResolver().query(CRICKET, null, null, null, null)) {
+            int live = c == null ? -1 : c.getColumnIndex("live");
             while (c != null && c.moveToNext()) {
                 out.add(new String[]{c.getString(0), c.getString(1), c.getString(2), c.getString(3),
-                        String.valueOf(c.getInt(4)), String.valueOf(c.getInt(5))});
+                        String.valueOf(c.getInt(4)), String.valueOf(c.getInt(5)),
+                        live < 0 ? "0" : String.valueOf(c.getInt(live))});
             }
         } catch (RuntimeException ignored) {
             // An older TV Discover, or no network: no scores.
@@ -1020,10 +1056,10 @@ final class CardHome {
         }, "card-cricket").start();
     }
 
-    /** "● LIVE  India 88/5 v Pakistan 91/2*": the red tag only while a side is batting. */
+    /** "● LIVE  India 88/5 v Pakistan 91/2*": the red tag only while the score is moving (TV Discover's "live"). */
     private static CharSequence scoreLine(String[] m) {
         String body = side(m[0], m[1], "1".equals(m[4])) + "  v  " + side(m[2], m[3], "2".equals(m[4]));
-        if ("0".equals(m[4])) return "🏏  " + body;
+        if (!"1".equals(m[6])) return "🏏  " + body;
         android.text.SpannableString s = new android.text.SpannableString("● LIVE  " + body);
         s.setSpan(new android.text.style.ForegroundColorSpan(0xFFFF5A5F), 0, 6, 0);
         return s;

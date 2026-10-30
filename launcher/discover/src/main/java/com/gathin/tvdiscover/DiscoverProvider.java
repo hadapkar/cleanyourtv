@@ -31,7 +31,7 @@ public class DiscoverProvider extends ContentProvider {
     private static final String[] CONTINUE = {"key", "title", "subtitle", "pkg", "intent", "progress", "poster", "engaged"};
     private static final String[] SHELF = {"key", "title", "subtitle", "pkg", "intent", "progress", "poster", "wide"};
     /** priority: 3 India playing, 2 IPL, 1 another international, 0 the rest; batting: 1 or 2 for the side in, else 0. */
-    private static final String[] CRICKET = {"team1", "score1", "team2", "score2", "batting", "priority"};
+    private static final String[] CRICKET = {"team1", "score1", "team2", "score2", "batting", "priority", "live"};
     private volatile boolean refreshing;
 
     @Override
@@ -57,7 +57,7 @@ public class DiscoverProvider extends ContentProvider {
             MatrixCursor c = new MatrixCursor(CRICKET);
             for (JSONObject m : Cricket.matches()) {
                 c.addRow(new Object[]{m.optString("team1"), m.optString("score1"), m.optString("team2"),
-                        m.optString("score2"), m.optInt("batting"), m.optInt("priority")});
+                        m.optString("score2"), m.optInt("batting"), m.optInt("priority"), m.optInt("live")});
             }
             return c;
         }
