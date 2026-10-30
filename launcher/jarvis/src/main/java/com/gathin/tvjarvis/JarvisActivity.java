@@ -63,6 +63,8 @@ public class JarvisActivity extends Activity {
     private boolean retried;
     /** An app about to open; Back within the short delay cancels it (a misheard name). */
     private Runnable pending;
+    /** Something was playing when Jarvis opened over it: Back plays it again (players pause when covered). */
+    private android.media.session.MediaController wasPlaying;
     /** Spoken names to the package they mean, beyond the apps' own labels. */
     private static final String[][] ALIASES = {
             {"hotstar", "in.startv.hotstar"}, {"jio hotstar", "in.startv.hotstar"}, {"prime", "com.amazon.amazonvideo.livingroom"},
@@ -112,6 +114,9 @@ public class JarvisActivity extends Activity {
         keys.setText("OK  Ask again      Back  Close");
         col.addView(keys, centred(18));
         setContentView(root);
+        android.media.session.MediaController m = Actions.playing(this);
+        if (m != null && m.getPlaybackState() != null
+                && m.getPlaybackState().getState() == android.media.session.PlaybackState.STATE_PLAYING) wasPlaying = m;
         tts = new TextToSpeech(this, st -> ttsReady = st == TextToSpeech.SUCCESS);
 
         if (Gemini.key(this).isEmpty()) {
@@ -419,6 +424,14 @@ public class JarvisActivity extends Activity {
             cancelPending();
             showState("Cancelled", heard.getText().toString(), "Press OK to ask again.");
             return;
+        }
+        // Back to the app underneath, playing again if it was.
+        if (wasPlaying != null) {
+            try {
+                wasPlaying.getTransportControls().play();
+            } catch (RuntimeException ignored) {
+                // The session ended meanwhile.
+            }
         }
         super.onBackPressed();
     }
