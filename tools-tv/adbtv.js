@@ -10,6 +10,8 @@
 //   node adbtv.js <host> gemini-key <file> [model]   give Jarvis its Gemini API key (from a local file)
 //   node adbtv.js <host> key-service on|off          the launcher's remote-button helper (mic button -> Jarvis)
 //   node adbtv.js <host> grant-addons               runtime permissions for the add-ons (TV listings, mic)
+//   node adbtv.js <host> backup <folder>             the owner's setup off the TV into <folder> (no keys or tokens)
+//   node adbtv.js <host> restore <folder>            put a backup from <folder> back on the TV
 //   node adbtv.js <host> pull <remote-file> <local-file>
 //   node adbtv.js <host> screenshot <out.png>       capture the TV screen (binary-safe exec: service)
 //   node adbtv.js <host> pull-state <out-file>      save enabled and disabled package lists to a file
@@ -184,6 +186,95 @@ class Adb {
   close() { this.sock.end(); }
 }
 
+// ---- backup and restore --------------------------------------------------------------------------------
+
+const HOME_FILES = '/sdcard/Android/data/com.gathin.tvhome/files';
+const DISCOVER_FILES = '/sdcard/Android/data/com.gathin.tvdiscover/files';
+/** TV settings worth keeping: the screensaver and sleep timers set for this TV. */
+const TV_SETTINGS = [['system', 'screen_off_timeout'], ['secure', 'sleep_timeout'], ['secure', 'screensaver_components'],
+  ['secure', 'screensaver_enabled'], ['secure', 'screensaver_activate_on_sleep'], ['secure', 'screensaver_activate_on_dock']];
+
+/** The keys in ~/.adbtv, so a backup can be checked never to contain one. */
+function secrets() {
+  const dir = path.join(require('os').homedir(), '.adbtv');
+  const out = [];
+  for (const f of ['tmdb.token', 'gemini.key']) {
+    try { const s = fs.readFileSync(path.join(dir, f), 'utf8').replace(/^﻿/, '').trim(); if (s.length > 8) out.push(s); } catch { /* not set up */ }
+  }
+  return out;
+}
+
+async function backup(adb, dir) {
+  if (!dir) throw new Error('backup needs a folder');
+  fs.mkdirSync(dir, { recursive: true });
+  const files = {};
+  const json = async (remote) => {
+    const text = (await adb.exec(`cat ${remote} 2>/dev/null`)).toString('utf8');
+    try { JSON.parse(text); return text; } catch { return null; }
+  };
+  files['config.json'] = await json(`${HOME_FILES}/config.json`);
+  files['home-settings.json'] = await json(`${HOME_FILES}/backup/home.json`);
+  await adb.shell('content call --uri content://com.gathin.tvdiscover --method export');
+  files['discover.json'] = await json(`${DISCOVER_FILES}/backup.json`);
+  const weather = await adb.shell('content query --uri content://com.gathin.tvweather/current');
+  const city = (weather.match(/\bcity=([^,\n]+)/) || [])[1] || '';
+  const settings = {};
+  for (const [ns, key] of TV_SETTINGS) {
+    const v = (await adb.shell(`settings get ${ns} ${key}`)).trim();
+    if (v && v !== 'null') settings[`${ns}/${key}`] = v;
+  }
+  const list = async (flags) => (await adb.shell(`pm list packages ${flags}`)).split('\n')
+    .map((l) => l.replace(/^package:/, '').trim()).filter(Boolean).sort();
+  files['tv.json'] = JSON.stringify({ city, settings, disabled: await list('-d'), apps: await list('-3') }, null, 2) + '\n';
+  // Never let a key or token into the backup, whatever a future version of an app writes.
+  const keys = secrets();
+  for (const [name, text] of Object.entries(files)) {
+    if (text && keys.some((k) => text.includes(k))) throw new Error(`${name} contains a key or token; backup stopped`);
+  }
+  for (const [name, text] of Object.entries(files)) {
+    if (text == null) { console.log(`  ${name}: not on the TV, skipped`); continue; }
+    fs.writeFileSync(path.join(dir, name), text);
+    console.log(`  ${name}: ${Buffer.byteLength(text)} bytes`);
+  }
+}
+
+async function restore(adb, dir) {
+  if (!dir) throw new Error('restore needs a folder');
+  const read = (name) => { try { return fs.readFileSync(path.join(dir, name), 'utf8'); } catch { return null; } };
+  const put = async (text, remote) => {
+    const stage = '/data/local/tmp/restore-' + path.basename(remote);
+    const tmp = path.join(require('os').tmpdir(), 'tv-restore-' + path.basename(remote));
+    fs.writeFileSync(tmp, text);
+    await adb.push(tmp, stage);
+    fs.unlinkSync(tmp);
+    await adb.shell(`mkdir -p ${path.posix.dirname(remote)}; cp ${stage} ${remote}; rm ${stage}`);
+  };
+  const tv = JSON.parse(read('tv.json') || '{}');
+  const config = read('config.json');
+  if (config) { await put(config, `${HOME_FILES}/config.json`); console.log('  config.json restored'); }
+  const home = JSON.parse(read('home-settings.json') || '{}');
+  if (tv.city) home.city = tv.city;
+  if (Object.keys(home).length) { await put(JSON.stringify(home), `${HOME_FILES}/restore/home.json`); console.log('  Home settings and city queued'); }
+  const discover = read('discover.json');
+  if (discover) {
+    await put(discover, `${DISCOVER_FILES}/restore.json`);
+    console.log('  Discover: ' + (await adb.shell('content call --uri content://com.gathin.tvdiscover --method restore')).trim());
+  }
+  for (const [k, v] of Object.entries(tv.settings || {})) {
+    const [ns, key] = k.split('/');
+    if (!/^(system|secure|global)$/.test(ns) || !/^[\w.]+$/.test(key) || !/^[\w./:-]*$/.test(v)) continue;
+    await adb.shell(`settings put ${ns} ${key} ${v}`);
+    console.log(`  ${k} = ${v}`);
+  }
+  // Apps and disabled packages are only reported: installing or disabling is left to the owner.
+  const installed = (await adb.shell('pm list packages -3')).split('\n').map((l) => l.replace(/^package:/, '').trim());
+  const missing = (tv.apps || []).filter((p) => !installed.includes(p));
+  if (missing.length) console.log('  apps in the backup but not on this TV: ' + missing.join(', '));
+  if ((tv.disabled || []).length) console.log('  disabled in the backup (not changed): ' + tv.disabled.join(', '));
+  // Home applies its settings when it starts.
+  process.stdout.write(await adb.shell('am force-stop com.gathin.tvhome; am start -W -n com.gathin.tvhome/.MainActivity | grep -E "Status|Error"'));
+}
+
 async function main() {
   const [host, verb, ...args] = process.argv.slice(2);
   if (!host || !verb) { console.error(fs.readFileSync(__filename, 'utf8').split('\n').slice(1, 9).join('\n')); process.exit(64); }
@@ -265,6 +356,10 @@ async function main() {
       const home = await adb.shell('cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME');
       fs.writeFileSync(args[0], `# enabled\n${enabled}\n# disabled\n${disabled}\n# home\n${home}\n`);
       console.log(`saved ${args[0]}`);
+    } else if (verb === 'backup') {
+      await backup(adb, args[0]);
+    } else if (verb === 'restore') {
+      await restore(adb, args[0]);
     } else {
       throw new Error('unknown command ' + verb);
     }

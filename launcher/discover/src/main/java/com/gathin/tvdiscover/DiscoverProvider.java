@@ -113,6 +113,13 @@ public class DiscoverProvider extends ContentProvider {
             maybeRefresh(false);
             return Bundle.EMPTY;
         }
+        // Backup and restore of the owner's taste and My list: from the laptop's ADB shell only.
+        if ("export".equals(method) || "restore".equals(method)) {
+            if (!"com.android.shell".equals(getCallingPackage())) return null;
+            Bundle out = new Bundle();
+            out.putBoolean("ok", "export".equals(method) ? Backup.export(getContext()) : Backup.restore(getContext()));
+            return out;
+        }
         // Lookups and list changes come from Jarvis only; reading stays open to the launcher.
         if (!"com.gathin.tvjarvis".equals(getCallingPackage())) return null;
         Bundle out = new Bundle();

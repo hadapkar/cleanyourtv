@@ -474,6 +474,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         setContentView(R.layout.activity_main);
         density = getResources().getDisplayMetrics().density;
         // config.xml, overlaid by config.json from a pushed theme (see Config and tools/theme.sh).
+        // A restore pushed from the laptop (tools-tv/restore.js) goes in before the settings are read.
+        SettingsBackup.importIfPresent(this);
         Config cfg = Config.load(this);
         homeAppKeys = RemoteKeys.parseAppKeys(cfg.appKeys);
         appLibrarySelection = cfg.appLibrarySelection;
@@ -1384,6 +1386,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         leftHome = true;
         super.onPause();
         resumed = false;
+        // The owner's choices as a file the laptop backs up (tools-tv/backup.js); rewritten only when changed.
+        SettingsBackup.exportAsync(this);
         root.removeCallbacks(weeklyClean);
         root.removeCallbacks(showIdleClock);
         endReorder();   // Home or another app while reordering keeps the order so far
