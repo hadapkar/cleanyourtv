@@ -284,6 +284,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private boolean settingsKeyPanel;
     /** Calmer motion for weak GPUs (config.xml, reduced_motion): stiff spring, short fades, no replay. */
     private boolean reducedMotion;
+    private final Runnable weeklyClean = () -> {
+        if (resumed) MemoryCleaner.cleanAsync(this, true);
+    };
     /** config.xml dock_row: the first row is a separate dock (band, parked low, top shelf) rather than plain grid. */
     private boolean dockRow;
     /** config single_row: every app in the dock's row, scrolling sideways, no grid below. */
@@ -1116,6 +1119,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onResume() {
         super.onResume();
         resumed = true;
+        // Weekly memory clean, once Home has stayed on screen a minute (not while hopping between apps).
+        root.removeCallbacks(weeklyClean);
+        if (MemoryCleaner.due(this)) root.postDelayed(weeklyClean, 60_000);
         // A festival that started or ended while Home was in the background: rebuild with or without it.
         if (festive != festival.active(LocalDate.now())) {
             recreate();
@@ -1377,6 +1383,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         leftHome = true;
         super.onPause();
         resumed = false;
+        root.removeCallbacks(weeklyClean);
         root.removeCallbacks(showIdleClock);
         endReorder();   // Home or another app while reordering keeps the order so far
         wallpaperPlayer.stop();

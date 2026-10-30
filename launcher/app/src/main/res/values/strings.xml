@@ -160,4 +160,7 @@
     <!-- Jarvis sleep timer. %1$d is minutes. -->
     <string name="sleep_timer_set">The TV will go to standby in %1$d minutes</string>
     <string name="sleep_timer_off">Sleep timer cancelled</string>
+    <!-- MemoryCleaner, weekly or from Jarvis. %1$d is megabytes. -->
+    <string name="cleaned_up">TV cleaned up · %1$d MB of memory freed</string>
+    <string name="cleaned_up_none">TV cleaned up · nothing more to free</string>
 </resources>

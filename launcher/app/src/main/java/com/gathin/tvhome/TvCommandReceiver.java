@@ -10,7 +10,7 @@ import android.widget.Toast;
 
 /**
  * Commands from Jarvis that need the launcher: sleep now, sleep in N minutes (or cancel), the screensaver, Home,
- * the app library and the app switcher. The manifest guards it with a signature permission, so only apps
+ * the app library, the app switcher and a memory clean (MemoryCleaner). The manifest guards it with a signature permission, so only apps
  * signed with this launcher's key (Jarvis) can send them.
  */
 public class TvCommandReceiver extends BroadcastReceiver {
@@ -48,6 +48,10 @@ public class TvCommandReceiver extends BroadcastReceiver {
             }
             case "screensaver":
                 RemoteKeys.runAction(ctx, "screensaver");
+                break;
+            case "clean":
+                // Not quiet: asked for, so it always says what it freed.
+                MemoryCleaner.cleanAsync(ctx, false);
                 break;
             case "home":
                 start(ctx, new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setPackage(ctx.getPackageName()));

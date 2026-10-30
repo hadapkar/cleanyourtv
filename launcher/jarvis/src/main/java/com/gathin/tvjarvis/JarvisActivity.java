@@ -359,6 +359,10 @@ public class JarvisActivity extends Activity {
             case "screensaver":
                 if (Actions.launcher(this, "screensaver", 0)) finish();
                 break;
+            case "clean":
+                // Home does it and shows what it freed; Jarvis closes so the message is not hidden behind it.
+                if (Actions.launcher(this, "clean", 0)) handler.postDelayed(this::finish, 600);
+                break;
             case "reminder":
                 showIfAny(Actions.reminder(this, a.optInt("minutes", 0), str(a, "time"), str(a, "text")));
                 break;

@@ -33,7 +33,7 @@ final class Gemini {
             + "{\"say\": short friendly sentence to show on screen, "
             + "\"action\": one of \"open_app\", \"search\", \"options\", \"set_city\", \"volume\", \"settings\", "
             + "\"media\", \"navigate\", \"sleep\", \"screensaver\", \"reminder\", \"find_title\", \"list_add\", "
-            + "\"list_remove\", \"list_show\", \"answer\", "
+            + "\"list_remove\", \"list_show\", \"clean\", \"answer\", "
             + "\"app\": package name from the installed list or \"\", "
             + "\"query\": what to search for or \"\", \"city\": a city name for set_city or \"\", "
             + "\"volume\": for volume one of \"mute\", \"unmute\", \"up\", \"down\", \"set\" or \"\", "
@@ -66,7 +66,7 @@ final class Gemini {
             + "sleep, minutes 0; \"screensaver chalao\" -> screensaver; \"8 baje match ke liye yaad dilana\" -> "
             + "reminder, time 20:00, text Match; \"Pathaan kahan hai\" / \"find Pathaan\" -> find_title, query "
             + "Pathaan; \"Family Man meri list mein daalo\" -> list_add, query The Family Man; \"meri list dikhao\" -> "
-            + "list_show; \"what's playing\" / \"aaj ka mausam\" / \"time kya hua\" -> answer, from the TV context. "
+            + "list_show; \"clean up the TV\" / \"TV slow hai\" / \"memory free karo\" -> clean; \"what's playing\" / \"aaj ka mausam\" / \"time kya hua\" -> answer, from the TV context. "
             + "\"who won the last world cup\" -> answer.";
 
     private Gemini() {
