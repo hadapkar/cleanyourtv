@@ -31,11 +31,21 @@ final class Gemini {
     private static final String SYSTEM = "You are Jarvis, the voice assistant of an Android TV in India. "
             + "The owner speaks English, Hindi or Hinglish. Reply with one JSON object only, no prose, in this shape: "
             + "{\"say\": short friendly sentence to show on screen, "
-            + "\"action\": one of \"open_app\", \"search\", \"options\", \"set_city\", \"volume\", \"answer\", "
+            + "\"action\": one of \"open_app\", \"search\", \"options\", \"set_city\", \"volume\", \"settings\", "
+            + "\"media\", \"navigate\", \"sleep\", \"screensaver\", \"reminder\", \"find_title\", \"list_add\", "
+            + "\"list_remove\", \"list_show\", \"answer\", "
             + "\"app\": package name from the installed list or \"\", "
             + "\"query\": what to search for or \"\", \"city\": a city name for set_city or \"\", "
             + "\"volume\": for volume one of \"mute\", \"unmute\", \"up\", \"down\", \"set\" or \"\", "
             + "\"level\": 0-100 for volume set, else 0, "
+            + "\"page\": for settings one of wifi, bluetooth, display, sound, apps, storage, date, language, network, "
+            + "accessibility, about, main; "
+            + "\"command\": for media one of play, pause, toggle, next, previous, rewind, forward, stop; "
+            + "\"seconds\": seconds to rewind or forward, else 0; "
+            + "\"to\": for navigate one of home, back, apps, switcher; "
+            + "\"minutes\": minutes for sleep (0 = now, -1 = cancel the timer) or for a reminder from now, else 0; "
+            + "\"time\": for a reminder at a clock time, 24-hour HH:mm, else \"\"; "
+            + "\"text\": what to be reminded of, else \"\"; "
             + "\"options\": up to 5 objects {\"title\": a film or show title, \"app\": package name, \"why\": four words} }. "
             + "open_app: the owner wants an app. search: the owner wants a specific film, show, song or video; pick the "
             + "app most likely to have it (YouTube for songs, clips and trailers). options: the owner asks for "
@@ -50,6 +60,13 @@ final class Gemini {
             + "\"kuch comedy dikhao\" -> options with five comedies; "
             + "\"mumbai ka weather\" -> set_city, city \"Mumbai\"; "
             + "\"mute\" / \"awaaz band karo\" -> volume mute; \"awaaz badhao\" -> volume up; \"volume 20 pe karo\" -> volume set, level 20; "
+            + "\"bluetooth kholo\" -> settings bluetooth; \"pause karo\" -> media pause; \"10 second peeche\" -> media "
+            + "rewind, seconds 10; \"next episode\" -> media next; \"home pe jao\" -> navigate home; \"meri apps "
+            + "dikhao\" -> navigate apps; \"30 minute mein TV band karo\" -> sleep, minutes 30; \"TV band karo\" -> "
+            + "sleep, minutes 0; \"screensaver chalao\" -> screensaver; \"8 baje match ke liye yaad dilana\" -> "
+            + "reminder, time 20:00, text Match; \"Pathaan kahan hai\" / \"find Pathaan\" -> find_title, query "
+            + "Pathaan; \"Family Man meri list mein daalo\" -> list_add, query The Family Man; \"meri list dikhao\" -> "
+            + "list_show; \"what's playing\" / \"aaj ka mausam\" / \"time kya hua\" -> answer, from the TV context. "
             + "\"who won the last world cup\" -> answer.";
 
     private Gemini() {
@@ -74,7 +91,7 @@ final class Gemini {
      * Blocking. {heard} are the recognizer's guesses, best first; {apps} are "Label=package" lines; {titles} are
      * "Title (Service)" lines streaming on this TV, possibly empty. Throws with a readable message on any failure.
      */
-    static JSONObject ask(Context ctx, List<String> heard, List<String> apps, List<String> titles)
+    static JSONObject ask(Context ctx, List<String> heard, List<String> apps, List<String> titles, String tv)
             throws IOException, JSONException {
         String key = key(ctx);
         if (key.isEmpty()) throw new IOException("Gemini is not set up yet");
@@ -83,7 +100,7 @@ final class Gemini {
                 .put("systemInstruction", new JSONObject().put("parts", new JSONArray()
                         .put(new JSONObject().put("text", SYSTEM))))
                 .put("contents", new JSONArray().put(new JSONObject().put("role", "user").put("parts", new JSONArray()
-                        .put(new JSONObject().put("text", prompt(heard, apps, titles))))))
+                        .put(new JSONObject().put("text", prompt(heard, apps, titles, tv))))))
                 .put("generationConfig", new JSONObject().put("responseMimeType", "application/json")
                         .put("temperature", 0.2));
         IOException last = null;
@@ -138,8 +155,8 @@ final class Gemini {
         throw last != null ? last : new IOException("No answer from Gemini");
     }
 
-    private static String prompt(List<String> heard, List<String> apps, List<String> titles) {
-        StringBuilder p = new StringBuilder("Installed apps:\n").append(String.join("\n", apps));
+    private static String prompt(List<String> heard, List<String> apps, List<String> titles, String tv) {
+        StringBuilder p = new StringBuilder("The TV right now:\n").append(tv).append("\n\nInstalled apps:\n").append(String.join("\n", apps));
         if (!titles.isEmpty()) {
             p.append("\n\nSome titles streaming on these apps in India now:\n").append(String.join("\n", titles));
         }

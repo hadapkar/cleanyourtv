@@ -50,6 +50,7 @@ public class DiscoverProvider extends ContentProvider {
         maybeRefresh(false);
         List<JSONObject> list = "queue".equals(what) ? Catalog.queue(getContext())
                 : "catalogue".equals(what) ? Catalog.all(getContext())
+                : "mylist".equals(what) ? Catalog.myList(getContext())
                 : Catalog.forYou(getContext(), 12);
         MatrixCursor c = new MatrixCursor(COLUMNS);
         for (JSONObject t : list) {
@@ -80,8 +81,33 @@ public class DiscoverProvider extends ContentProvider {
 
     @Override
     public Bundle call(String method, String arg, Bundle extras) {
-        if ("refresh".equals(method)) maybeRefresh(false);
-        return Bundle.EMPTY;
+        if ("refresh".equals(method)) {
+            maybeRefresh(false);
+            return Bundle.EMPTY;
+        }
+        // Lookups and list changes come from Jarvis only; reading stays open to the launcher.
+        if (!"com.gathin.tvjarvis".equals(getCallingPackage())) return null;
+        Bundle out = new Bundle();
+        switch (method) {
+            case "find": {
+                JSONObject t = Catalog.lookup(getContext(), arg);
+                if (t != null) out.putString("json", t.toString());
+                return out;
+            }
+            case "list_add": {
+                JSONObject t = Catalog.lookup(getContext(), arg);
+                if (t != null) {
+                    Catalog.listAdd(getContext(), t);
+                    out.putString("json", t.toString());
+                }
+                return out;
+            }
+            case "list_remove":
+                out.putInt("removed", Catalog.listRemove(getContext(), arg == null ? "" : arg));
+                return out;
+            default:
+                return null;
+        }
     }
 
     private synchronized void maybeRefresh(boolean force) {

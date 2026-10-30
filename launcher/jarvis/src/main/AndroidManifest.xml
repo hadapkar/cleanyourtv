@@ -4,6 +4,11 @@
     <!-- The voice assistant lives in this add-on, so the launcher needs neither the microphone nor the network. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Reminders: re-armed after a reboot, shown over any app (display over other apps, from the shell). -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- Sleep, screensaver, Home, apps and switcher through the launcher (its signature permission). -->
+    <uses-permission android:name="com.gathin.tvhome.permission.COMMAND" />
 
     <queries>
         <intent>
@@ -33,7 +38,28 @@
             android:name=".JarvisActivity"
             android:exported="true"
             android:screenOrientation="landscape"
-            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
+            android:theme="@android:style/Theme.Translucent.NoTitleBar.Fullscreen"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="" />
+
+        <!-- Media sessions (pause, next, seek, what is playing): notification access, granted from the shell. -->
+        <service
+            android:name=".MediaListener"
+            android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <receiver
+            android:name=".Reminders"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
         <!-- Read-only readiness for the launcher's Jarvis card (no key or content). -->
         <provider

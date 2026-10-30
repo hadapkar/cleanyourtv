@@ -31,6 +31,11 @@
     <!-- Continue card: which apps were used lately, however they were opened (appops GET_USAGE_STATS, from the shell). -->
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
 
+    <!-- Commands from Jarvis (sleep, screensaver, Home, apps, switcher): only apps signed with this key. -->
+    <permission
+        android:name="com.gathin.tvhome.permission.COMMAND"
+        android:protectionLevel="signature" />
+
     <queries>
         <!-- The TV Weather add-on's provider (card_home reads the weather from it; the launcher itself stays offline). -->
         <provider android:authorities="com.gathin.tvweather" />
@@ -225,6 +230,15 @@
 
         <!-- tools/theme.sh writes the theme through this where the shell can't reach Android/data;
              see ThemeProvider. WRITE_SECURE_SETTINGS: the adb shell has it, ordinary apps don't. -->
+        <receiver
+            android:name=".TvCommandReceiver"
+            android:exported="true"
+            android:permission="com.gathin.tvhome.permission.COMMAND">
+            <intent-filter>
+                <action android:name="com.gathin.tvhome.COMMAND" />
+            </intent-filter>
+        </receiver>
+
         <provider
             android:name=".ThemeProvider"
             android:authorities="${applicationId}.theme"

@@ -163,6 +163,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private boolean switcherOn;
     private AppSwitcher switcher;
     private long lastHomeIntent;
+    /** TvCommandReceiver's "switcher": open the app switcher on this Home. */
+    static final String EXTRA_OPEN_SWITCHER = "open_switcher";
     private final BroadcastReceiver screenReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -1051,6 +1053,17 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (openInputsIfAsked(intent)) return;
         if (openLibraryIfAsked(intent)) return;
         if (intent == null || !intent.hasCategory(Intent.CATEGORY_HOME)) return;
+        if (intent.getBooleanExtra(EXTRA_OPEN_SWITCHER, false)) {
+            if (switcher == null) switcher = new AppSwitcher(this, root);
+            grid.post(() -> {
+                try {
+                    switcher.open();
+                } catch (RuntimeException e) {
+                    android.util.Log.w("tvhome", "app switcher", e);
+                }
+            });
+            return;
+        }
         if (switcherOn) {
             // Two Home presses within half a second: the app switcher. Home while it is open closes it.
             long now = android.os.SystemClock.uptimeMillis();

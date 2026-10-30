@@ -81,7 +81,17 @@ final class Catalog {
     }
 
     /** Liked or unrated titles, best match first. */
+    /** My list titles that stream on this TV first, then the best matches. */
     static List<JSONObject> forYou(Context ctx, int max) {
+        List<JSONObject> mine = new ArrayList<>();
+        for (JSONObject t : myList(ctx)) if (!t.optString("pkg").isEmpty()) mine.add(t);
+        Set<String> keys = new HashSet<>();
+        for (JSONObject t : mine) keys.add(t.optString("key"));
+        for (JSONObject t : forYouRanked(ctx, max)) if (keys.add(t.optString("key"))) mine.add(t);
+        return mine.size() > max ? new ArrayList<>(mine.subList(0, max)) : mine;
+    }
+
+    private static List<JSONObject> forYouRanked(Context ctx, int max) {
         Map<String, Integer> weights = weights(ctx);
         Set<String> disliked = set(ctx, "disliked");
         List<JSONObject> list = new ArrayList<>();
@@ -297,7 +307,133 @@ final class Catalog {
 
     static JSONObject find(Context ctx, String key) {
         for (JSONObject t : all(ctx)) if (t.optString("key").equals(key)) return t;
+        for (JSONObject t : myList(ctx)) if (t.optString("key").equals(key)) return t;
         return null;
+    }
+
+    // ---- exact lookup (Jarvis: "where is X") -------------------------------------------------------
+
+    /**
+     * The best TMDB match for a spoken title and where it streams in India: key, title, year, poster, genres,
+     * services (on this TV's apps, each {pkg, name}) and elsewhere (rent, buy, or services without an app here).
+     * Blocking; null without a token, on no match or on failure.
+     */
+    static JSONObject lookup(Context ctx, String query) {
+        String token = token(ctx);
+        if (token.isEmpty() || query == null || query.trim().isEmpty()) return null;
+        try {
+            JSONArray results = get(token, "/search/multi?language=en-IN&region=IN&query="
+                    + java.net.URLEncoder.encode(query.trim(), "UTF-8")).getJSONArray("results");
+            // The most popular match is not always the one meant ("family man" is also a 2001 film): look at the
+            // first few and take the first that streams on an app here, else the first match.
+            JSONObject first = null;
+            int tried = 0;
+            for (int i = 0; i < results.length() && tried < 4; i++) {
+                JSONObject r = results.getJSONObject(i);
+                String type = r.optString("media_type");
+                if (!type.equals("movie") && !type.equals("tv")) continue;
+                tried++;
+                JSONObject t = describe(ctx, token, r);
+                if (first == null) first = t;
+                if (t.getJSONArray("services").length() > 0) return t;
+            }
+            return first;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** One search result with where it streams in India. */
+    private static JSONObject describe(Context ctx, String token, JSONObject r) throws IOException, JSONException {
+        String kind = r.getString("media_type");
+        JSONObject t = new JSONObject();
+        t.put("key", kind + ":" + r.getInt("id"));
+        t.put("title", r.optString(kind.equals("movie") ? "title" : "name"));
+        String date = r.optString(kind.equals("movie") ? "release_date" : "first_air_date", "");
+        t.put("year", date.length() >= 4 ? date.substring(0, 4) : "");
+        t.put("kind", kind.equals("movie") ? "film" : "series");
+        t.put("poster", r.isNull("poster_path") ? "" : r.optString("poster_path"));
+        t.put("overview", r.optString("overview"));
+        t.put("genres", r.optJSONArray("genre_ids") == null ? new JSONArray() : r.getJSONArray("genre_ids"));
+        JSONObject in = get(token, "/" + kind + "/" + r.getInt("id") + "/watch/providers").getJSONObject("results")
+                .optJSONObject("IN");
+        JSONArray services = new JSONArray(), elsewhere = new JSONArray();
+        Set<String> seen = new HashSet<>();
+        if (in != null) {
+            for (String group : new String[]{"flatrate", "free", "ads", "rent", "buy"}) {
+                JSONArray list = in.optJSONArray(group);
+                if (list == null) continue;
+                boolean subscription = !group.equals("rent") && !group.equals("buy");
+                for (int i = 0; i < list.length(); i++) {
+                    String name = list.getJSONObject(i).optString("provider_name");
+                    String[] svc = service(name);
+                    if (svc != null && subscription && installed(ctx, svc[1]) && seen.add(svc[1])) {
+                        services.put(new JSONObject().put("pkg", svc[1]).put("name", svc[2]));
+                    } else if (svc == null && seen.add("x:" + name)) {
+                        elsewhere.put(name + (subscription ? "" : " (" + group + ")"));
+                    }
+                }
+            }
+        }
+        t.put("services", services);
+        t.put("elsewhere", elsewhere);
+        if (services.length() > 0) {
+            t.put("pkg", services.getJSONObject(0).getString("pkg"));
+            t.put("service", services.getJSONObject(0).getString("name"));
+        }
+        return t;
+    }
+
+    private static String[] service(String providerName) {
+        String n = providerName.toLowerCase(Locale.ROOT);
+        if (n.contains("channel") || n.contains("with ads")) return null;
+        for (String[] s : SERVICES) if (n.contains(s[0])) return s;
+        return null;
+    }
+
+    private static boolean installed(Context ctx, String pkg) {
+        try {
+            ctx.getPackageManager().getApplicationInfo(pkg, 0);
+            return true;
+        } catch (android.content.pm.PackageManager.NameNotFoundException e) {
+            return false;
+        }
+    }
+
+    // ---- My list ---------------------------------------------------------------------------------------
+
+    static List<JSONObject> myList(Context ctx) {
+        List<JSONObject> out = new ArrayList<>();
+        try {
+            JSONArray a = new JSONArray(prefs(ctx).getString("mylist", "[]"));
+            for (int i = 0; i < a.length(); i++) out.add(a.getJSONObject(i));
+        } catch (JSONException ignored) {
+            // A damaged list reads as empty.
+        }
+        return out;
+    }
+
+    /** Adds a looked-up title to the front of My list (no duplicates). */
+    static void listAdd(Context ctx, JSONObject title) {
+        synchronized (LOCK) {
+            List<JSONObject> list = myList(ctx);
+            String key = title.optString("key");
+            list.removeIf(t -> t.optString("key").equals(key));
+            list.add(0, title);
+            prefs(ctx).edit().putString("mylist", new JSONArray(list).toString()).apply();
+        }
+    }
+
+    /** Removes the titles whose name contains the spoken words; returns how many. */
+    static int listRemove(Context ctx, String query) {
+        synchronized (LOCK) {
+            String q = query.toLowerCase(Locale.ROOT).trim();
+            List<JSONObject> list = myList(ctx);
+            int before = list.size();
+            list.removeIf(t -> !q.isEmpty() && t.optString("title").toLowerCase(Locale.ROOT).contains(q));
+            prefs(ctx).edit().putString("mylist", new JSONArray(list).toString()).apply();
+            return before - list.size();
+        }
     }
 
     private static byte[] readAll(InputStream in) throws IOException {

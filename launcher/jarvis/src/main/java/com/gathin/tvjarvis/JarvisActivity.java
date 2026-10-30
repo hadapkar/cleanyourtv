@@ -77,8 +77,12 @@ public class JarvisActivity extends Activity {
         DisplayMetrics m = getResources().getDisplayMetrics();
         d = m.density;
         FrameLayout root = new FrameLayout(this);
+        // Over whatever was on screen: the window is translucent, so the app stays visible behind a deep frosted
+        // tint. (Android 9 has no window blur; Android 12 added it.)
         root.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{0xFF050814, 0xFF0B1230, 0xFF050814}));
+                new int[]{0xD9050814, 0xE60B1230, 0xF2050814}));
+        root.setAlpha(0f);
+        root.animate().alpha(1f).setDuration(220).start();
 
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
@@ -265,7 +269,7 @@ public class JarvisActivity extends Activity {
         List<String> apps = installedApps();
         new Thread(() -> {
             try {
-                JSONObject a = Gemini.ask(this, alternatives, apps, catalogue());
+                JSONObject a = Gemini.ask(this, alternatives, apps, catalogue(), Actions.context(this));
                 handler.post(() -> act(a));
             } catch (Exception e) {
                 handler.post(() -> {
@@ -284,7 +288,8 @@ public class JarvisActivity extends Activity {
         status.setText("Jarvis");
         reply.setText(str(a, "say"));
         // Spoken only when there is something to hear; opening an app speaks for itself.
-        if (!action.equals("open_app") && !action.equals("search") && !action.equals("volume")) speak(str(a, "say"));
+        boolean ownLine = action.matches("open_app|search|volume|settings|media|navigate|screensaver|reminder|find_title|list_add|list_remove|list_show");
+        if (!ownLine) speak(str(a, "say"));
         switch (action) {
             case "open_app":
                 if (!installed(app)) reply.setText("That app is not on this TV.");
@@ -301,6 +306,40 @@ public class JarvisActivity extends Activity {
                 break;
             case "volume":
                 volume(str(a, "volume"), a.optInt("level", 0));
+                break;
+            case "settings":
+                showIfAny(Actions.settings(this, str(a, "page")));
+                break;
+            case "media":
+                showIfAny(Actions.media(this, str(a, "command"), a.optInt("seconds", 0)));
+                // Back to what is playing.
+                handler.postDelayed(this::finish, 700);
+                break;
+            case "navigate": {
+                String to = str(a, "to");
+                if (to.equals("back")) finish();
+                else if (Actions.launcher(this, to.equals("apps") ? "library" : to, 0)) finish();
+                break;
+            }
+            case "sleep": {
+                int m = a.optInt("minutes", 0);
+                Actions.launcher(this, m == 0 ? "sleep" : "sleep_in", Math.max(0, m));
+                if (m == 0) finish();
+                break;
+            }
+            case "screensaver":
+                if (Actions.launcher(this, "screensaver", 0)) finish();
+                break;
+            case "reminder":
+                showIfAny(Actions.reminder(this, a.optInt("minutes", 0), str(a, "time"), str(a, "text")));
+                break;
+            case "find_title":
+                findTitle(str(a, "query"), str(a, "app"));
+                break;
+            case "list_add":
+            case "list_remove":
+            case "list_show":
+                myList(action, str(a, "query"));
                 break;
             default:
                 break;
@@ -410,6 +449,89 @@ public class JarvisActivity extends Activity {
         Locale want = hindi ? new Locale("hi", "IN") : new Locale("en", "IN");
         if (tts.isLanguageAvailable(want) >= TextToSpeech.LANG_AVAILABLE) tts.setLanguage(want);
         tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis");
+    }
+
+    private void showIfAny(String line) {
+        if (line == null || line.isEmpty()) return;
+        reply.setText(line);
+        speak(line);
+    }
+
+    /** "Where is Pathaan": TMDB says exactly where it streams; one app opens it, several are offered, none is said. */
+    private void findTitle(String query, String app) {
+        status.setText("Looking it up");
+        orb.setMode(OrbView.THINKING);
+        new Thread(() -> {
+            JSONObject t = Actions.lookup(this, query);
+            handler.post(() -> {
+                orb.setMode(OrbView.IDLE);
+                status.setText("Jarvis");
+                if (t == null) {
+                    showIfAny("I couldn't find " + query + ".");
+                    return;
+                }
+                String name = t.optString("title") + (t.optString("year").isEmpty() ? "" : " (" + t.optString("year") + ")");
+                JSONArray services = t.optJSONArray("services");
+                int n = services == null ? 0 : services.length();
+                if (n == 0) {
+                    JSONArray other = t.optJSONArray("elsewhere");
+                    String where = other != null && other.length() > 0 ? other.optString(0) : "";
+                    showIfAny(name + " isn't on your apps" + (where.isEmpty() ? "." : ". It's on " + where + "."));
+                    return;
+                }
+                // The app the owner named wins when it has the title.
+                for (int i = 0; i < n; i++) {
+                    JSONObject s = services.optJSONObject(i);
+                    if (s != null && s.optString("pkg").equals(app)) {
+                        showIfAny(name + " is on " + s.optString("name") + ".");
+                        search(app, t.optString("title"));
+                        return;
+                    }
+                }
+                if (n == 1) {
+                    JSONObject s = services.optJSONObject(0);
+                    showIfAny(name + " is on " + s.optString("name") + ".");
+                    search(s.optString("pkg"), t.optString("title"));
+                    return;
+                }
+                JSONArray options = new JSONArray();
+                for (int i = 0; i < n; i++) {
+                    JSONObject s = services.optJSONObject(i);
+                    try {
+                        options.put(new JSONObject().put("title", t.optString("title")).put("app", s.optString("pkg"))
+                                .put("why", s.optString("name")));
+                    } catch (org.json.JSONException ignored) {
+                        // Keys and values are plain strings.
+                    }
+                }
+                showIfAny(name + " is on " + n + " of your apps. Pick one.");
+                showChoices(options);
+            });
+        }, "jarvis-find").start();
+    }
+
+    private void myList(String action, String query) {
+        new Thread(() -> {
+            String line;
+            JSONArray show = null;
+            if (action.equals("list_show")) {
+                show = Actions.myList(this);
+                line = show.length() == 0 ? "Your list is empty." : "Here's your list.";
+            } else if (action.equals("list_remove")) {
+                line = Actions.listRemove(this, query) > 0 ? "Removed from your list." : "That isn't on your list.";
+            } else {
+                JSONObject t = Actions.listAdd(this, query);
+                line = t == null ? "I couldn't find " + query + "."
+                        : t.optString("title") + " is on your list" + (t.optString("service").isEmpty() ? "."
+                        : ", on " + t.optString("service") + ".");
+            }
+            final String l = line;
+            final JSONArray s = show;
+            handler.post(() -> {
+                showIfAny(l);
+                if (s != null && s.length() > 0) showChoices(s);
+            });
+        }, "jarvis-list").start();
     }
 
     /** The TV's media volume: mute, unmute, up, down, or set to a percentage. No permission needed. */

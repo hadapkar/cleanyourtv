@@ -157,4 +157,7 @@
     <string name="game_live">Live now</string>
     <!-- The pill on Home while an app starts. %1$s is the app's name. -->
     <string name="opening_app">Opening %1$s\u2026</string>
+    <!-- Jarvis sleep timer. %1$d is minutes. -->
+    <string name="sleep_timer_set">The TV will go to standby in %1$d minutes</string>
+    <string name="sleep_timer_off">Sleep timer cancelled</string>
 </resources>
