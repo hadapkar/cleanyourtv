@@ -57,6 +57,8 @@ final class CardHome {
 
     private final Activity activity;
     private final boolean tvos;
+    /** The card or item being pressed, for Zoom. Main thread only. */
+    private View pressed;
     private final float d;
     private final FrameLayout container;
     private final TextView greeting;
@@ -99,6 +101,26 @@ final class CardHome {
             return new JSONObject(json).optString(key, "");
         } catch (Exception e) {
             return "";
+        }
+    }
+
+    private android.os.Bundle zoom() {
+        return tvos ? Zoom.from(pressed) : null;
+    }
+
+    /**
+     * Back on Home from an app: the cards and the rows settle in from slightly larger, fading in, as Apple TV's
+     * Home does when an app closes. {@code main} is the header and app rows.
+     */
+    void settleIn(View main) {
+        if (!tvos) return;
+        for (View v : new View[]{container, main}) {
+            v.animate().cancel();
+            v.setAlpha(0f);
+            v.setScaleX(1.04f);
+            v.setScaleY(1.04f);
+            v.animate().alpha(1f).scaleX(1f).scaleY(1f)
+                    .setDuration(320).setInterpolator(new android.view.animation.DecelerateInterpolator(1.8f)).start();
         }
     }
 
@@ -355,7 +377,7 @@ final class CardHome {
         makeFocusable(item, () -> {
             LastOpened.record(activity, pkg);
             launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
-            activity.startActivity(launch);
+            activity.startActivity(launch, zoom());
             opening(pkg);
         });
         return item;
@@ -569,7 +591,7 @@ final class CardHome {
                 return;
             }
             LastOpened.record(activity, pkg);
-            activity.startActivity(i);
+            activity.startActivity(i, zoom());
             opening(pkg);
         } catch (Exception e) {
             launch(pkg);
@@ -716,14 +738,14 @@ final class CardHome {
         if (i == null) i = pm.getLaunchIntentForPackage(pkg);
         if (i == null) return;
         LastOpened.record(activity, pkg);
-        activity.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        activity.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), zoom());
         opening(pkg);
     }
 
     private void openSwipe() {
         try {
             activity.startActivity(new Intent().setClassName(DISCOVER_PKG, DISCOVER_PKG + ".SwipeActivity")
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), zoom());
         } catch (RuntimeException e) {
             Toast.makeText(activity, "TV Discover is not installed", Toast.LENGTH_SHORT).show();
         }
@@ -757,7 +779,7 @@ final class CardHome {
         if (installed("com.gathin.tvjarvis")) {
             try {
                 activity.startActivity(new Intent().setClassName("com.gathin.tvjarvis", "com.gathin.tvjarvis.JarvisActivity")
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), zoom());
                 return;
             } catch (RuntimeException ignored) {
                 // Fall through to the system assistant.
@@ -785,7 +807,9 @@ final class CardHome {
         v.setOnClickListener(x -> {
             // An app opened from Home is still starting: a second press would open another one.
             if (activity instanceof MainActivity && ((MainActivity) activity).launching()) return;
+            pressed = x;
             onOk.run();
+            pressed = null;
         });
         if (tvos) {
             Sheen sheen = new Sheen();
@@ -794,8 +818,9 @@ final class CardHome {
             v.setOnFocusChangeListener((view, focused) -> {
                 sheen.setFocused(focused, true);
                 view.animate().scaleX(focused ? 1.06f : 1f).scaleY(focused ? 1.06f : 1f)
-                        .translationZ(focused ? px(18) : 0f).setDuration(focused ? 240 : 180)
-                        .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).start();
+                        .translationZ(focused ? px(18) : 0f).setDuration(focused ? 320 : 200)
+                        .setInterpolator(focused ? new android.view.animation.OvershootInterpolator(0.9f)
+                                : new android.view.animation.DecelerateInterpolator(1.6f)).start();
             });
             return;
         }

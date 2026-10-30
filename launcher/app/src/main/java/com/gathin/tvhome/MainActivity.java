@@ -156,6 +156,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      */
     private long screenOffAt;
     private boolean introOnResume;
+    /** Home went to the background (an app opened); the next resume plays settleIn. */
+    private boolean leftHome;
+    private View mainContent;
     private final BroadcastReceiver screenReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -1076,6 +1079,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             cardHomeChecked = true;
             View main = grid;
             while (main.getParent() != root) main = (View) main.getParent();
+            mainContent = main;
             cardHome = CardHome.create(this, root, main);
             if (cardHome != null) {
                 grid.addOnScrollListener(new RecyclerView.OnScrollListener() {
@@ -1091,7 +1095,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (cardHome != null) {
             cardHome.setGreeting(greeting.getText());
             cardHome.refresh();
+            if (leftHome && mainContent != null) cardHome.settleIn(mainContent);
         }
+        leftHome = false;
         switch (tileRefresh.onResume(packagesChangedSinceRebuild())) {
             case REBUILD:
                 tilesReady = false;
@@ -1289,6 +1295,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onPause() {
         hideOpening();
+        leftHome = true;
         super.onPause();
         resumed = false;
         root.removeCallbacks(showIdleClock);

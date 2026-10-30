@@ -194,6 +194,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private final boolean recordOpens;
     /** tvos_focus: see Sheen. Static so Holder, a static class, can read it. */
     static boolean tvosFocus;
+    /** The tile being opened, for Zoom; set just before launch() and cleared after. */
+    private View launchFrom;
     /** Dock order (config.xml dock_apps, or a theme's config.json). */
     private final List<String> favourites;
     /** Grid apps fill the dock slots dock_apps leaves free (config.xml, fill_dock). */
@@ -515,7 +517,9 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         }
         h.card.setOnClickListener(v -> {
             if (launching()) return;
+            launchFrom = v;
             launch(e);
+            launchFrom = null;
         });
         h.card.setOnLongClickListener(v -> {
             if (launching()) return true;
@@ -560,10 +564,11 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             if (ctx.getPackageManager().resolveActivity(byAction, 0) != null) i = byAction;
         }
         try {
-            ctx.startActivity(i);
+            android.os.Bundle zoom = tvosFocus && animations ? Zoom.from(launchFrom) : null;
+            ctx.startActivity(i, zoom);
             if (ctx instanceof MainActivity) ((MainActivity) ctx).showOpening(e.label);
             if (recordOpens) LastOpened.record(ctx, e.pkg);
-            if (advancedEffects && !reducedMotion && ctx instanceof Activity) {
+            if (zoom == null && advancedEffects && !reducedMotion && ctx instanceof Activity) {
                 ((Activity) ctx).overridePendingTransition(R.anim.app_open_enter, R.anim.app_open_exit);
             }
         } catch (Exception ex) {

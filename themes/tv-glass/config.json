@@ -34,7 +34,7 @@
   "app_glow": false,
   "animations": true,
   "advanced_effects": true,
-  "focus_overshoot": false,
+  "focus_overshoot": true,
   "wifi_status_color": true,
   "greeting_name": "Sudarshan",
   "app_library": true,
