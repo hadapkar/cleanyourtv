@@ -37,14 +37,19 @@ import java.util.Locale;
 
 /**
  * Card home (config.json {@code "card_home": true}): frosted-glass cards over the wallpaper, above the dock.
- * A greeting, clock and weather card on the left, the apps opened last on the right, and a Jarvis card that
- * opens the TV's assistant. Everything is drawn in code from shapes and gradients, with no blur.
+ * A greeting, clock and weather card on the left; on the right "For you" posters and a Swipe card above the
+ * apps opened last and a Jarvis card that opens the TV's assistant. Everything is drawn in code from shapes and
+ * gradients, with no blur.
  *
- * The launcher stays offline: weather is read from the TV Weather add-on's content provider, which fetches it
- * itself. Without the add-on the weather line stays empty.
+ * The launcher stays offline: weather comes from the TV Weather add-on and titles and posters from the TV
+ * Discover add-on, each through its content provider; the add-ons do their own fetching. Without them those
+ * cards say how to set them up.
  */
 final class CardHome {
     private static final Uri WEATHER = Uri.parse("content://com.gathin.tvweather/current");
+    private static final Uri FOR_YOU = Uri.parse("content://com.gathin.tvdiscover/for_you");
+    private static final Uri QUEUE = Uri.parse("content://com.gathin.tvdiscover/queue");
+    private static final String DISCOVER_PKG = "com.gathin.tvdiscover";
     private static final long REFRESH_GAP_MS = 5 * 60 * 1000L;
 
     private final Activity activity;
@@ -56,6 +61,11 @@ final class CardHome {
     private final LinearLayout recentRow;
     private final TextView recentHint;
     private final OrbView orb;
+    private final LinearLayout forYouRow;
+    private final TextView forYouHint;
+    private final TextView swipeCount;
+    private final ImageView[] swipeStack = new ImageView[2];
+    private int posterW, posterH, posterSlots;
     private long lastRefresh;
 
     /** Returns the cards when the theme turns them on, otherwise null. They sit in the root just under {@code above}. */
@@ -88,7 +98,7 @@ final class CardHome {
         int left = (int) (w * 0.059f), top = (int) (h * 0.20f), bottom = (int) (h * 0.685f);
         int gap = (int) (w * 0.011f), leftW = (int) (w * 0.36f);
         int rightX = left + leftW + gap, rightW = w - left - rightX;
-        int rowGap = (int) (h * 0.02f), recentH = (int) ((bottom - top - rowGap) * 0.52f);
+        int rowGap = (int) (h * 0.02f);
 
         // Left: greeting, clock, date, weather.
         LinearLayout leftCard = card(left, top, leftW, bottom - top);
@@ -140,32 +150,65 @@ final class CardHome {
         weatherRow.addView(weatherText, wtLp);
         leftCard.addView(weatherRow);
 
-        // Right, top: the apps opened last.
-        LinearLayout recent = card(rightX, top, rightW, recentH);
-        recent.setPadding(px(30), px(22), px(30), px(18));
-        TextView recentTitle = text(12, 0xB3FFFFFF, "sans-serif-medium", 0.2f);
-        recentTitle.setAllCaps(true);
-        recentTitle.setText("Recently opened");
-        recent.addView(recentTitle);
+        // Right: two rows, For you and Swipe over Recently opened and Jarvis.
+        int topRowH = (int) ((bottom - top - rowGap) * 0.56f);
+        int forYouW = (int) ((rightW - gap) * 0.70f), swipeW = rightW - gap - forYouW;
+        int bottomY = top + topRowH + rowGap, bottomH = bottom - bottomY;
+        int recentW = (int) ((rightW - gap) * 0.50f), jarvisW = rightW - gap - recentW;
+
+        LinearLayout forYou = card(rightX, top, forYouW, topRowH);
+        forYou.setPadding(px(24), px(16), px(24), px(14));
+        forYou.addView(kicker("For you"));
+        forYouRow = new LinearLayout(activity);
+        forYouRow.setGravity(Gravity.CENTER_VERTICAL);
+        forYou.addView(forYouRow, new LinearLayout.LayoutParams(-1, 0, 1f));
+        forYouHint = text(15, 0x99FFFFFF, "sans-serif", 0.02f);
+        forYouHint.setVisibility(View.GONE);
+        forYou.addView(forYouHint);
+        posterH = topRowH - px(16 + 14) - px(24);
+        posterW = posterH * 2 / 3;
+        int innerW = forYouW - px(48);
+        posterSlots = Math.max(1, Math.min(5, (innerW + px(10)) / (posterW + px(10))));
+
+        LinearLayout swipe = card(rightX + forYouW + gap, top, swipeW, topRowH);
+        swipe.setPadding(px(20), px(16), px(20), px(14));
+        swipe.addView(kicker("Swipe"));
+        FrameLayout stack = new FrameLayout(activity);
+        stack.setClipChildren(false);
+        int thumbH = topRowH - px(16 + 14) - px(24 + 40), thumbW = thumbH * 2 / 3;
+        for (int i = 1; i >= 0; i--) {
+            ImageView v = posterView();
+            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(thumbW, thumbH, Gravity.CENTER);
+            v.setRotation(i == 1 ? 8f : -4f);
+            v.setTranslationX(i == 1 ? px(14) : -px(6));
+            stack.addView(v, lp);
+            swipeStack[i] = v;
+        }
+        swipe.addView(stack, new LinearLayout.LayoutParams(-1, 0, 1f));
+        swipeCount = text(13, 0xCCFFFFFF, "sans-serif", 0.02f);
+        swipeCount.setGravity(Gravity.CENTER_HORIZONTAL);
+        swipe.addView(swipeCount, new LinearLayout.LayoutParams(-1, -2));
+        makeFocusable(swipe, this::openSwipe);
+
+        LinearLayout recent = card(rightX, bottomY, recentW, bottomH);
+        recent.setPadding(px(24), px(14), px(24), px(10));
+        recent.addView(kicker("Recently opened"));
         recentRow = new LinearLayout(activity);
         recentRow.setGravity(Gravity.CENTER_VERTICAL);
         recent.addView(recentRow, new LinearLayout.LayoutParams(-1, 0, 1f));
-        recentHint = text(15, 0x99FFFFFF, "sans-serif", 0.02f);
+        recentHint = text(14, 0x99FFFFFF, "sans-serif", 0.02f);
         recentHint.setText("Apps you open from Home show up here");
         recentHint.setVisibility(View.GONE);
         recent.addView(recentHint);
 
-        // Right, bottom: Jarvis.
-        int jarvisY = top + recentH + rowGap;
-        LinearLayout jarvis = card(rightX, jarvisY, rightW, bottom - jarvisY);
+        // Jarvis.
+        LinearLayout jarvis = card(rightX + recentW + gap, bottomY, jarvisW, bottomH);
         jarvis.setOrientation(LinearLayout.HORIZONTAL);
         jarvis.setGravity(Gravity.CENTER_VERTICAL);
-        jarvis.setPadding(px(34), px(8), px(34), px(8));
+        jarvis.setPadding(px(26), px(8), px(22), px(8));
         LinearLayout words = new LinearLayout(activity);
         words.setOrientation(LinearLayout.VERTICAL);
-        TextView jarvisKicker = text(12, 0xB3FFFFFF, "sans-serif-medium", 0.2f);
-        jarvisKicker.setAllCaps(true);
-        jarvisKicker.setText("Jarvis");
+        TextView jarvisKicker = kicker("Jarvis");
         TextView ask = text(28, 0xFFFFFFFF, "sans-serif-light", -0.01f);
         ask.setText("Just ask.");
         TextView hint = text(14, 0x99FFFFFF, "sans-serif", 0.02f);
@@ -175,7 +218,7 @@ final class CardHome {
         words.addView(hint);
         jarvis.addView(words, new LinearLayout.LayoutParams(0, -2, 1f));
         orb = new OrbView(activity);
-        jarvis.addView(orb, new LinearLayout.LayoutParams(px(66), px(66)));
+        jarvis.addView(orb, new LinearLayout.LayoutParams(px(58), px(58)));
         makeFocusable(jarvis, this::openAssistant);
     }
 
@@ -187,6 +230,7 @@ final class CardHome {
     /** Called on every return to Home: rebuilds the recent row and, at most every few minutes, the weather. */
     void refresh() {
         buildRecent();
+        new Thread(this::readDiscover, "card-discover").start();
         long now = System.currentTimeMillis();
         if (now - lastRefresh < REFRESH_GAP_MS) return;
         lastRefresh = now;
@@ -231,7 +275,7 @@ final class CardHome {
         PackageManager pm = activity.getPackageManager();
         int shown = 0;
         for (String pkg : LastOpened.recent(activity, 12)) {
-            if (shown == 4) break;
+            if (shown == 3) break;
             Intent launch = pm.getLeanbackLaunchIntentForPackage(pkg);
             if (launch == null) launch = pm.getLaunchIntentForPackage(pkg);
             if (launch == null) continue;
@@ -253,7 +297,7 @@ final class CardHome {
     }
 
     private LinearLayout.LayoutParams first() {
-        return new LinearLayout.LayoutParams(px(98), -2);
+        return new LinearLayout.LayoutParams(px(66), -2);
     }
 
     private LinearLayout.LayoutParams next() {
@@ -276,7 +320,7 @@ final class CardHome {
             }
         });
         image.setClipToOutline(true);
-        item.addView(image, new LinearLayout.LayoutParams(-1, px(58)));
+        item.addView(image, new LinearLayout.LayoutParams(-1, px(38)));
         TextView name = text(11, 0xCCFFFFFF, "sans-serif", 0.02f);
         name.setSingleLine(true);
         name.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -291,6 +335,131 @@ final class CardHome {
             activity.startActivity(launch);
         });
         return item;
+    }
+
+    /** For you posters and the Swipe card's stack and count, from the TV Discover add-on. Off the main thread. */
+    private void readDiscover() {
+        boolean installed = installed(DISCOVER_PKG);
+        java.util.List<String[]> picks = new java.util.ArrayList<>();   // {title, pkg, poster uri}
+        java.util.List<String> queuePosters = new java.util.ArrayList<>();
+        int queued = 0;
+        if (installed) {
+            try (Cursor c = activity.getContentResolver().query(FOR_YOU, null, null, null, null)) {
+                while (c != null && c.moveToNext() && picks.size() < posterSlots) {
+                    picks.add(new String[]{c.getString(c.getColumnIndexOrThrow("title")),
+                            c.getString(c.getColumnIndexOrThrow("pkg")), c.getString(c.getColumnIndexOrThrow("poster"))});
+                }
+            } catch (RuntimeException ignored) {
+                // The add-on is updating or not answering: show the hint for now.
+            }
+            try (Cursor c = activity.getContentResolver().query(QUEUE, null, null, null, null)) {
+                if (c != null) {
+                    queued = c.getCount();
+                    while (c.moveToNext() && queuePosters.size() < 2) {
+                        queuePosters.add(c.getString(c.getColumnIndexOrThrow("poster")));
+                    }
+                }
+            } catch (RuntimeException ignored) {
+                // As above.
+            }
+        }
+        android.graphics.Bitmap[] art = new android.graphics.Bitmap[picks.size()];
+        for (int i = 0; i < art.length; i++) art[i] = decodePoster(picks.get(i)[2]);
+        android.graphics.Bitmap[] stackArt = new android.graphics.Bitmap[queuePosters.size()];
+        for (int i = 0; i < stackArt.length; i++) stackArt[i] = decodePoster(queuePosters.get(i));
+        final int count = queued;
+        activity.runOnUiThread(() -> showDiscover(installed, picks, art, stackArt, count));
+    }
+
+    private void showDiscover(boolean installed, java.util.List<String[]> picks, android.graphics.Bitmap[] art,
+                              android.graphics.Bitmap[] stackArt, int queued) {
+        forYouRow.removeAllViews();
+        int shown = 0;
+        for (int i = 0; i < picks.size(); i++) {
+            if (art[i] == null) continue;
+            String[] p = picks.get(i);
+            ImageView v = posterView();
+            v.setImageBitmap(art[i]);
+            v.setContentDescription(p[0]);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(posterW, posterH);
+            if (shown > 0) lp.leftMargin = px(10);
+            makeFocusable(v, () -> launch(p[1]));
+            forYouRow.addView(v, lp);
+            shown++;
+        }
+        forYouHint.setText(!installed ? "Install TV Discover to see picks here"
+                : "Swipe a few titles to get picks for you");
+        forYouHint.setVisibility(shown == 0 ? View.VISIBLE : View.GONE);
+        forYouRow.setVisibility(shown == 0 ? View.GONE : View.VISIBLE);
+        for (int i = 0; i < swipeStack.length; i++) {
+            swipeStack[i].setImageBitmap(i < stackArt.length ? stackArt[i] : null);
+            swipeStack[i].setVisibility(i < stackArt.length && stackArt[i] != null ? View.VISIBLE : View.INVISIBLE);
+        }
+        swipeCount.setText(!installed ? "Not installed" : queued > 0 ? queued + " to rate \u00b7 OK to start" : "OK to start");
+    }
+
+    private android.graphics.Bitmap decodePoster(String uri) {
+        if (uri == null) return null;
+        try (android.os.ParcelFileDescriptor fd = activity.getContentResolver().openFileDescriptor(Uri.parse(uri), "r")) {
+            if (fd == null) return null;
+            android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
+            o.inSampleSize = 2;   // w342 posters shown about 110 px wide
+            o.inPreferredConfig = android.graphics.Bitmap.Config.RGB_565;
+            return android.graphics.BitmapFactory.decodeFileDescriptor(fd.getFileDescriptor(), null, o);
+        } catch (Exception | OutOfMemoryError e) {
+            return null;
+        }
+    }
+
+    private boolean installed(String pkg) {
+        try {
+            activity.getPackageManager().getApplicationInfo(pkg, 0);
+            return true;
+        } catch (PackageManager.NameNotFoundException e) {
+            return false;
+        }
+    }
+
+    private void launch(String pkg) {
+        PackageManager pm = activity.getPackageManager();
+        Intent i = pm.getLeanbackLaunchIntentForPackage(pkg);
+        if (i == null) i = pm.getLaunchIntentForPackage(pkg);
+        if (i == null) return;
+        LastOpened.record(activity, pkg);
+        activity.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+    }
+
+    private void openSwipe() {
+        try {
+            activity.startActivity(new Intent().setClassName(DISCOVER_PKG, DISCOVER_PKG + ".SwipeActivity")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        } catch (RuntimeException e) {
+            Toast.makeText(activity, "TV Discover is not installed", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private ImageView posterView() {
+        ImageView v = new ImageView(activity);
+        v.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        v.setOutlineProvider(new ViewOutlineProvider() {
+            @Override
+            public void getOutline(View view, Outline outline) {
+                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), px(8));
+            }
+        });
+        v.setClipToOutline(true);
+        GradientDrawable placeholder = new GradientDrawable();
+        placeholder.setCornerRadius(px(8));
+        placeholder.setColor(0x22FFFFFF);
+        v.setBackground(placeholder);
+        return v;
+    }
+
+    private TextView kicker(String label) {
+        TextView t = text(12, 0xB3FFFFFF, "sans-serif-medium", 0.2f);
+        t.setAllCaps(true);
+        t.setText(label);
+        return t;
     }
 
     private void openAssistant() {

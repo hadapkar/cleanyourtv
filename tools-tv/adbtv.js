@@ -6,6 +6,7 @@
 //   node adbtv.js <host> push <local-file> <remote-path>
 //   node adbtv.js <host> install <local-apk>        push, `pm install -r`, then delete the temp copy
 //   node adbtv.js <host> theme <theme-folder>        push config.json and wallpapers/ to the launcher, restart Home
+//   node adbtv.js <host> tmdb-token <file>          give TV Discover its TMDB read token (from a local file)
 //   node adbtv.js <host> screenshot <out.png>       capture the TV screen (binary-safe exec: service)
 //   node adbtv.js <host> pull-state <out-file>      save enabled and disabled package lists to a file
 //
@@ -210,6 +211,12 @@ async function main() {
         console.log(`  ${rel}: ${n} bytes`);
       }
       process.stdout.write(await adb.shell('am force-stop com.gathin.tvhome; am start -W -n com.gathin.tvhome/.MainActivity'));
+    } else if (verb === 'tmdb-token') {
+      const token = fs.readFileSync(args[0], 'utf8').trim();
+      if (!/^[A-Za-z0-9._-]+$/.test(token)) throw new Error('that file does not look like a TMDB read token');
+      const out = await adb.shell('am broadcast -f 0x20 -a com.gathin.tvdiscover.SET_TOKEN '
+        + '-n com.gathin.tvdiscover/.TokenReceiver --es token ' + token);
+      console.log(out.replace(token, '<token>').trim());
     } else if (verb === 'screenshot') {
       const png = await adb.exec('screencap -p');
       if (png.subarray(1, 4).toString() !== 'PNG') throw new Error('not a PNG: ' + png.subarray(0, 80).toString());

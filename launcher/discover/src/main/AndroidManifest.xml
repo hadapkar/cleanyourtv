@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Titles and posters come from TMDB; this add-on holds the network so the launcher never needs it. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:label="TV Discover"
+        android:allowBackup="false"
+        android:usesCleartextTraffic="false">
+
+        <!-- Opened from the launcher's Swipe card. -->
+        <activity
+            android:name=".SwipeActivity"
+            android:exported="true"
+            android:screenOrientation="landscape"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
+
+        <!-- Read-only for others: the For you list and the cached posters. -->
+        <provider
+            android:name=".DiscoverProvider"
+            android:authorities="com.gathin.tvdiscover"
+            android:exported="true" />
+
+        <!-- The TMDB token is set from the adb shell only (tools-tv/adbtv.js tmdb-token): DUMP is held by the
+             shell, never by an ordinary app, so no other app can change it. -->
+        <receiver
+            android:name=".TokenReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.gathin.tvdiscover.SET_TOKEN" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

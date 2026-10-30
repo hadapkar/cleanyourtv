@@ -27,6 +27,8 @@
     <queries>
         <!-- The TV Weather add-on's provider (card_home reads the weather from it; the launcher itself stays offline). -->
         <provider android:authorities="com.gathin.tvweather" />
+        <provider android:authorities="com.gathin.tvdiscover" />
+        <package android:name="com.gathin.tvdiscover" />
         <!-- The standard settings handlers, so package visibility doesn't hide them and send the pills to a vendor fallback by mistake. -->
         <intent>
             <action android:name="android.settings.SETTINGS" />
