@@ -948,6 +948,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             card.setClipToOutline(true);
             sheen = tvosFocus ? new Sheen() : null;
             if (sheen != null) card.setForeground(sheen);
+            if (tvosFocus) name.setVisibility(View.GONE);
 
             card.setOnKeyListener((view, keyCode, event) -> {
                 if (event.getAction() != KeyEvent.ACTION_DOWN) return false;

@@ -420,13 +420,24 @@ final class CardHome {
      * sliding over them; they come back as the grid scrolls home.
      */
     void onGridScrolled(int offset) {
-        float h = container.getHeight() > 0 ? container.getHeight() : activity.getResources().getDisplayMetrics().heightPixels;
-        float t = Math.max(0f, Math.min(1f, offset / (h * 0.33f)));
-        container.setTranslationY(-offset);
-        container.setAlpha(1f - t);
-        // Faded out: the cards must not take focus or clicks under the app rows.
-        container.setVisibility(t >= 1f ? View.INVISIBLE : View.VISIBLE);
+        // The grid jumps a whole row at once (scrollToPosition), so the cards animate to where the scroll puts them
+        // instead of following it frame by frame: they glide up and fade out together, and come back the same way.
+        boolean away = offset > 0;
+        float y = away ? -Math.min(offset, px(120)) : 0f;
+        if (shelfAway == away && container.getTranslationY() == y) return;
+        shelfAway = away;
+        container.animate().cancel();
+        if (!away) container.setVisibility(View.VISIBLE);
+        container.animate().alpha(away ? 0f : 1f).translationY(y).setDuration(away ? 240 : 300)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f))
+                .withEndAction(() -> {
+                    // Faded out: the cards must not take focus or clicks under the app rows.
+                    if (shelfAway) container.setVisibility(View.INVISIBLE);
+                }).start();
     }
+
+    /** The cards are slid away for the app rows (onGridScrolled). */
+    private boolean shelfAway;
 
     /** The greeting line the launcher already works out (time of day, name, festival). */
     void setGreeting(CharSequence text) {
