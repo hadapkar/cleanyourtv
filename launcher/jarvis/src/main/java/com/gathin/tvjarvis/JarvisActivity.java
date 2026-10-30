@@ -65,6 +65,8 @@ public class JarvisActivity extends Activity {
     private Runnable pending;
     /** Something was playing when Jarvis opened over it: Back plays it again (players pause when covered). */
     private android.media.session.MediaController wasPlaying;
+    /** Without session access (low-RAM TVs): audio was playing when Jarvis opened. */
+    private boolean audioWasPlaying;
     /** Spoken names to the package they mean, beyond the apps' own labels. */
     private static final String[][] ALIASES = {
             {"hotstar", "in.startv.hotstar"}, {"jio hotstar", "in.startv.hotstar"}, {"prime", "com.amazon.amazonvideo.livingroom"},
@@ -117,6 +119,7 @@ public class JarvisActivity extends Activity {
         android.media.session.MediaController under = Actions.playing(this);
         if (under != null && under.getPlaybackState() != null
                 && under.getPlaybackState().getState() == android.media.session.PlaybackState.STATE_PLAYING) wasPlaying = under;
+        audioWasPlaying = under == null && Actions.audioPlaying(this);
         tts = new TextToSpeech(this, st -> ttsReady = st == TextToSpeech.SUCCESS);
 
         if (Gemini.key(this).isEmpty()) {
@@ -432,6 +435,10 @@ public class JarvisActivity extends Activity {
             } catch (RuntimeException ignored) {
                 // The session ended meanwhile.
             }
+        } else if (audioWasPlaying) {
+            // After the window is gone, so the play key reaches the app again in front.
+            Context app = getApplicationContext();
+            handler.postDelayed(() -> Actions.media(app, "play", 0), 400);
         }
         super.onBackPressed();
     }

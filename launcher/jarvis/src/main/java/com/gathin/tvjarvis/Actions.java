@@ -92,7 +92,9 @@ final class Actions {
 
     static String media(Context ctx, String command, int seconds) {
         MediaController c = playing(ctx);
-        if (c == null) return "Nothing is playing that I can control.";
+        // Low-RAM TVs (this MiTV) refuse the notification access sessions need: send the media keys a remote would,
+        // which Android hands to whatever is playing.
+        if (c == null) return mediaKeys(ctx, command, seconds);
         MediaController.TransportControls t = c.getTransportControls();
         PlaybackState s = c.getPlaybackState();
         long pos = s == null ? 0 : s.getPosition()
@@ -113,6 +115,41 @@ final class Actions {
             default: return "I can play, pause, skip or seek.";
         }
         return null;
+    }
+
+    private static String mediaKeys(Context ctx, String command, int seconds) {
+        int key;
+        int times = 1;
+        switch (command) {
+            case "play": key = android.view.KeyEvent.KEYCODE_MEDIA_PLAY; break;
+            case "pause": key = android.view.KeyEvent.KEYCODE_MEDIA_PAUSE; break;
+            case "toggle": key = android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE; break;
+            case "next": key = android.view.KeyEvent.KEYCODE_MEDIA_NEXT; break;
+            case "previous": key = android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS; break;
+            case "stop": key = android.view.KeyEvent.KEYCODE_MEDIA_STOP; break;
+            case "rewind":
+            case "forward":
+                key = command.equals("rewind") ? android.view.KeyEvent.KEYCODE_MEDIA_REWIND
+                        : android.view.KeyEvent.KEYCODE_MEDIA_FAST_FORWARD;
+                // Most players skip about 10 s per press.
+                times = Math.max(1, Math.min(12, Math.round((seconds > 0 ? seconds : 10) / 10f)));
+                break;
+            default:
+                return "I can play, pause, skip or seek.";
+        }
+        android.media.AudioManager am = ctx.getSystemService(android.media.AudioManager.class);
+        if (am == null) return "Nothing is playing that I can control.";
+        for (int i = 0; i < times; i++) {
+            am.dispatchMediaKeyEvent(new android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, key));
+            am.dispatchMediaKeyEvent(new android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, key));
+        }
+        return null;
+    }
+
+    /** Audio was playing (no special access needed): the app under Jarvis should play again on Back. */
+    static boolean audioPlaying(Context ctx) {
+        android.media.AudioManager am = ctx.getSystemService(android.media.AudioManager.class);
+        return am != null && am.isMusicActive();
     }
 
     // ---- 9, 10, 11: the launcher's commands --------------------------------------------------------------
