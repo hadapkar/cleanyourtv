@@ -57,6 +57,8 @@ final class CardHome {
 
     private final Activity activity;
     private final boolean tvos;
+    /** plain_glass in the theme: cards without the frosted (blurred) backdrop, see captureFrost. */
+    private final boolean plainGlass;
     /** The card or item being pressed, for Zoom. Main thread only. */
     private View pressed;
     private final float d;
@@ -187,6 +189,7 @@ final class CardHome {
     private CardHome(Activity activity, FrameLayout root, View above) {
         this.activity = activity;
         tvos = flag(activity, "tvos_focus");
+        plainGlass = flag(activity, "plain_glass");
         DisplayMetrics m = activity.getResources().getDisplayMetrics();
         d = m.density;
         int w = m.widthPixels, h = m.heightPixels;
@@ -910,6 +913,10 @@ final class CardHome {
 
     /** Draws the screen behind the cards (cards hidden) at 1/FROST size and blurs it, for the Frost backgrounds. */
     private void captureFrost() {
+        // plain_glass: the tint alone over the wallpaper. Over a smooth wallpaper (the mesh) the blur looks the same
+        // as the wallpaper itself, and the frost was a second textured pass over every card on every frame: the GPU
+        // was the slow part of each frame on this TV (about 17 ms of a 16.7 ms budget).
+        if (plainGlass) return;
         View root = (View) container.getParent();
         int w = root.getWidth() / FROST, h = root.getHeight() / FROST;
         if (w <= 0 || h <= 0) return;
