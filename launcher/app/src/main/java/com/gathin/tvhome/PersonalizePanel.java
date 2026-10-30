@@ -39,6 +39,10 @@ final class PersonalizePanel {
     private final float d;
     private FrameLayout overlay;
     private TextView status;
+    private EditText nameField, cityField;
+    private String nameAtOpen = "", cityAtOpen = "";
+    /** Root children whose focus was blocked while the panel is open, with what they had. */
+    private final java.util.Map<android.view.ViewGroup, Integer> blocked = new java.util.HashMap<>();
 
     PersonalizePanel(Activity activity, FrameLayout root, Host host) {
         this.activity = activity;
@@ -77,9 +81,14 @@ final class PersonalizePanel {
 
         EditText name = field("Greeting name", host.greetingName(), card, InputType.TYPE_TEXT_FLAG_CAP_WORDS);
         EditText city = field("Weather city", host.city(), card, InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        nameField = name;
+        cityField = city;
+        nameAtOpen = host.greetingName();
+        cityAtOpen = host.city();
         name.setOnEditorActionListener((v, action, e) -> {
             if (!isDone(action, e)) return false;
             host.setGreetingName(v.getText().toString().trim());
+            nameAtOpen = v.getText().toString().trim();
             say("Greeting saved");
             hideKeyboard(v);
             city.requestFocus();
@@ -90,6 +99,7 @@ final class PersonalizePanel {
             String wanted = v.getText().toString().trim();
             hideKeyboard(v);
             if (wanted.isEmpty()) return true;
+            cityAtOpen = wanted;
             say("Looking up " + wanted + "…");
             new Thread(() -> {
                 String found = null;
@@ -141,6 +151,16 @@ final class PersonalizePanel {
                 return false;
             });
         }
+        // Only the panel takes focus while it is open: the remote must not wander onto Home behind it.
+        blocked.clear();
+        for (int i = 0; i < root.getChildCount(); i++) {
+            View child = root.getChildAt(i);
+            if (child instanceof android.view.ViewGroup) {
+                android.view.ViewGroup g = (android.view.ViewGroup) child;
+                blocked.put(g, g.getDescendantFocusability());
+                g.setDescendantFocusability(android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+            }
+        }
         root.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
         overlay.animate().alpha(1f).setDuration(200).start();
         card.setScaleX(0.96f);
@@ -152,10 +172,31 @@ final class PersonalizePanel {
 
     void close() {
         if (overlay == null) return;
+        saveChanges();
+        for (java.util.Map.Entry<android.view.ViewGroup, Integer> e : blocked.entrySet()) {
+            e.getKey().setDescendantFocusability(e.getValue());
+        }
+        blocked.clear();
         FrameLayout o = overlay;
         overlay = null;
         hideKeyboard(o);
         o.animate().alpha(0f).setDuration(160).withEndAction(() -> root.removeView(o)).start();
+    }
+
+    /** Done or Back keeps what was typed: a new name at once, a new city looked up by TV Weather. */
+    private void saveChanges() {
+        String name = nameField == null ? nameAtOpen : nameField.getText().toString().trim();
+        if (!name.equals(nameAtOpen)) host.setGreetingName(name);
+        String city = cityField == null ? cityAtOpen : cityField.getText().toString().trim();
+        if (city.isEmpty() || city.equalsIgnoreCase(cityAtOpen)) return;
+        new Thread(() -> {
+            try {
+                Bundle out = activity.getContentResolver().call(WEATHER, "set_city", city, null);
+                if (out != null && out.getString("city") != null) activity.runOnUiThread(host::cityChanged);
+            } catch (RuntimeException ignored) {
+                // No weather add-on.
+            }
+        }, "personalize-city").start();
     }
 
     private EditText field(String label, String value, LinearLayout card, int capitalise) {
