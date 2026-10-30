@@ -323,6 +323,11 @@ final class CardHome {
         jarvis.addView(hint, new LinearLayout.LayoutParams(-1, -2));
         makeFocusable(jarvis, this::openAssistant);
         leftCardView = leftCard;
+        makeFocusable(leftCard, this::openPersonalize);
+        leftCard.setOnLongClickListener(v -> {
+            openPersonalize();
+            return true;
+        });
         forYouCard = forYou;
         swipeCard = swipe;
         recentCard = recent;
@@ -403,6 +408,45 @@ final class CardHome {
         lp.width = w;
         lp.height = h;
         v.setLayoutParams(lp);
+    }
+
+    private PersonalizePanel personalize;
+    private String cityName = "";
+
+    private void openPersonalize() {
+        if (!(activity instanceof MainActivity)) return;
+        MainActivity home = (MainActivity) activity;
+        if (personalize == null) {
+            personalize = new PersonalizePanel(activity, (FrameLayout) container.getParent(), new PersonalizePanel.Host() {
+                @Override public String greetingName() { return home.greetingName(); }
+                @Override public void setGreetingName(String name) { home.setGreetingName(name); }
+                @Override public String city() { return cityName; }
+                @Override public void cityChanged() { new Thread(CardHome.this::readWeather, "card-weather").start(); }
+            });
+        }
+        personalize.open();
+    }
+
+    /** Back on Home with the panel open closes it first. */
+    boolean closePanel() {
+        if (personalize == null || !personalize.isOpen()) return false;
+        personalize.close();
+        return true;
+    }
+
+    /** Writes one key into the pushed theme's config.json (the owner's own choices, such as greeting_name). */
+    static void writeString(Context ctx, String key, String value) {
+        try {
+            File file = new File(Config.dir(ctx), Config.FILE_NAME);
+            JSONObject json = file.isFile()
+                    ? new JSONObject(new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8)) : new JSONObject();
+            json.put(key, value);
+            File tmp = new File(file.getPath() + ".tmp");
+            Files.write(tmp.toPath(), json.toString(2).getBytes(StandardCharsets.UTF_8));
+            if (!tmp.renameTo(file)) Files.write(file.toPath(), json.toString(2).getBytes(StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            android.util.Log.w("tvhome", "config write", e);
+        }
     }
 
     /** Jarvis can answer: installed, a key set, and the key not refused by Gemini. */
@@ -491,7 +535,8 @@ final class CardHome {
                 long updated = c.getLong(c.getColumnIndexOrThrow("updated"));
                 if (System.currentTimeMillis() - updated < WEATHER_MAX_AGE_MS) {
                     temp = String.format(Locale.getDefault(), "%.0f\u00b0", c.getFloat(c.getColumnIndexOrThrow("temp_c")));
-                    text = c.getString(c.getColumnIndexOrThrow("text")) + " \u00b7 " + c.getString(c.getColumnIndexOrThrow("city"));
+                    cityName = c.getString(c.getColumnIndexOrThrow("city"));
+                    text = c.getString(c.getColumnIndexOrThrow("text")) + " \u00b7 " + cityName;
                 }
             }
         } catch (RuntimeException ignored) {

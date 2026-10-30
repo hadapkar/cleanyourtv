@@ -28,6 +28,7 @@ public class WeatherProvider extends ContentProvider {
     private static final float DEFAULT_LAT = 18.5204f;
     private static final float DEFAULT_LON = 73.8567f;
     private static final String JARVIS = "com.gathin.tvjarvis";
+    private static final String LAUNCHER = "com.gathin.tvhome";
 
     private static final String PREFS = "weather";
     private static final long STALE_MS = 20 * 60 * 1000L;
@@ -59,6 +60,23 @@ public class WeatherProvider extends ContentProvider {
     public Bundle call(String method, String arg, Bundle extras) {
         if ("refresh".equals(method)) {
             refreshAsync(false);
+        } else if ("set_city".equals(method)) {
+            // The launcher's Personalize panel (offline) and Jarvis: a city name, looked up here.
+            String caller = getCallingPackage();
+            if (!(JARVIS.equals(caller) || LAUNCHER.equals(caller)) || arg == null || arg.trim().isEmpty()) return null;
+            try {
+                JSONObject place = geocode(arg.trim());
+                if (place == null) return Bundle.EMPTY;
+                String name = place.getString("name");
+                prefs().edit().putString("city", name).putFloat("lat", (float) place.getDouble("latitude"))
+                        .putFloat("lon", (float) place.getDouble("longitude")).putLong("updated", 0L).apply();
+                refreshAsync(true);
+                Bundle out = new Bundle();
+                out.putString("city", name);
+                return out;
+            } catch (Exception e) {
+                return Bundle.EMPTY;
+            }
         } else if ("set_place".equals(method)) {
             // Only Jarvis may move the weather; any app may read it.
             if (!JARVIS.equals(getCallingPackage()) || arg == null || extras == null) return null;
@@ -119,6 +137,24 @@ public class WeatherProvider extends ContentProvider {
             sp.edit().putFloat("temp", (float) cur.getDouble("temperature_2m")).putInt("code", code)
                     .putString("text", describe(code)).putString("sunrise", sunrise)
                     .putLong("updated", System.currentTimeMillis()).apply();
+        } finally {
+            c.disconnect();
+        }
+    }
+
+    /** Open-Meteo geocoding (no key): the best match for a city name, or null. Blocking. */
+    private static JSONObject geocode(String city) throws Exception {
+        URL url = new URL("https://geocoding-api.open-meteo.com/v1/search?count=1&language=en&name="
+                + java.net.URLEncoder.encode(city, "UTF-8"));
+        HttpURLConnection c = (HttpURLConnection) url.openConnection();
+        c.setConnectTimeout(10000);
+        c.setReadTimeout(10000);
+        try (InputStream in = c.getInputStream()) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[4096];
+            for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
+            org.json.JSONArray results = new JSONObject(out.toString(StandardCharsets.UTF_8.name())).optJSONArray("results");
+            return results == null || results.length() == 0 ? null : results.getJSONObject(0);
         } finally {
             c.disconnect();
         }

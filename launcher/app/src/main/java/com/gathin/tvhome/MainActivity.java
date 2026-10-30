@@ -1821,6 +1821,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     @Override
     public void onBackPressed() {
+        if (cardHome != null && cardHome.closePanel()) return;
         // Home screen: Back goes nowhere.
     }
 
@@ -2767,6 +2768,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         } else {
             handler.postDelayed(clockCheck, 1_000L);
         }
+    }
+
+    /** The greeting's name, for the Personalize panel. */
+    String greetingName() {
+        return greetingName;
+    }
+
+    /** From the Personalize panel: shown at once and kept in config.json for the next start. */
+    void setGreetingName(String name) {
+        greetingName = name == null ? "" : name;
+        CardHome.writeString(this, "greeting_name", greetingName);
+        updateGreeting();
     }
 
     private void updateGreeting() {
