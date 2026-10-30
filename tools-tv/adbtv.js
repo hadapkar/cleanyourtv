@@ -220,7 +220,7 @@ async function main() {
       console.log(out.replace(token, '<token>').trim());
     } else if (verb === 'gemini-key') {
       const key = fs.readFileSync(args[0], 'utf8').replace(/^\uFEFF/, '').trim();
-      if (!/^[A-Za-z0-9_-]+$/.test(key)) throw new Error('that file does not look like a Gemini API key');
+      if (!/^[A-Za-z0-9._-]+$/.test(key)) throw new Error('that file does not look like a Gemini API key');
       const model = args[1] && /^[a-z0-9.-]+$/.test(args[1]) ? ' --es model ' + args[1] : '';
       const out = await adb.shell('am broadcast -f 0x20 -a com.gathin.tvjarvis.SET_KEY '
         + '-n com.gathin.tvjarvis/.KeyReceiver --es key ' + key + model);

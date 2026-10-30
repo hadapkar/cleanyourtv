@@ -22,7 +22,8 @@ import java.util.List;
  */
 final class Gemini {
     private static final String PREFS = "jarvis";
-    static final String DEFAULT_MODEL = "gemini-2.5-flash";
+    // Google's alias for the current Flash model; fixed names such as gemini-2.5-flash are retired for new keys.
+    static final String DEFAULT_MODEL = "gemini-flash-latest";
 
     private static final String SYSTEM = "You are Jarvis, the voice assistant of an Android TV in India. "
             + "The owner speaks English, Hindi or Hinglish. Reply with one JSON object only, no prose, in this shape: "
