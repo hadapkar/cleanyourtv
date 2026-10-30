@@ -48,7 +48,8 @@ final class BootIntro {
         LinearLayout col = new LinearLayout(activity);
         col.setOrientation(LinearLayout.VERTICAL);
         col.setGravity(Gravity.CENTER_HORIZONTAL);
-        cover.addView(col, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+        // Full width: the title is measured once, and its spacing then changes; a wrap_content width clipped its last letter.
+        cover.addView(col, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER));
 
         float titleSp = 120f;
         TextView big = new TextView(activity);
@@ -58,7 +59,9 @@ final class BootIntro {
         big.setTypeface(Typeface.create(Typeface.SERIF, Typeface.BOLD));
         big.setIncludeFontPadding(false);
         big.setAlpha(0f);
-        col.addView(big);
+        big.setGravity(Gravity.CENTER_HORIZONTAL);
+        big.setSingleLine(true);
+        col.addView(big, new LinearLayout.LayoutParams(-1, -2));
 
         TextView small = new TextView(activity);
         small.setText(subtitle);
@@ -68,7 +71,8 @@ final class BootIntro {
         small.setLetterSpacing(0.08f);
         small.setAlpha(0f);
         small.setTranslationY(14 * d);
-        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-2, -2);
+        small.setGravity(Gravity.CENTER_HORIZONTAL);
+        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-1, -2);
         slp.gravity = Gravity.CENTER_HORIZONTAL;
         slp.topMargin = Math.round(18 * d);
         if (!subtitle.isEmpty()) col.addView(small, slp);
