@@ -112,7 +112,15 @@ final class BootIntro {
         big.setText(title);
         big.setTextColor(Color.WHITE);
         big.setTextSize(TypedValue.COMPLEX_UNIT_SP, titleSp);
-        big.setTypeface(Typeface.create(Typeface.SERIF, Typeface.BOLD));
+        // Times New Roman's look: Tinos Bold (res/font, SIL Open Font License), drawn to Times New Roman's metrics.
+        // Times itself cannot be shipped; the system serif is the fallback.
+        Typeface titleFace;
+        try {
+            titleFace = activity.getResources().getFont(R.font.tinos_bold);
+        } catch (RuntimeException e) {
+            titleFace = Typeface.create(Typeface.SERIF, Typeface.BOLD);
+        }
+        big.setTypeface(titleFace);
         big.setIncludeFontPadding(false);
         big.setAlpha(0f);
         big.setGravity(Gravity.CENTER_HORIZONTAL);
